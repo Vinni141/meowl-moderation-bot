@@ -8,8 +8,8 @@ RUN apt-get update \
   && corepack enable \
   && corepack prepare pnpm@9.15.4 --activate
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod=false
+COPY package.json ./
+RUN pnpm install --no-frozen-lockfile --prod=false
 
 COPY prisma ./prisma
 COPY tsconfig.json ./
