@@ -8,6 +8,5 @@ prisma/dev.db
 *.db-journal
 .git
 .gitignore
-Dockerfile
 README.md
 tests
