@@ -1,0 +1,304 @@
+import {
+  ChannelType,
+  EmbedBuilder,
+  PermissionFlagsBits,
+  type GuildMember,
+  type GuildTextBasedChannel,
+  type Message,
+  type Role,
+  type TextChannel,
+} from 'discord.js';
+import { prisma } from '../database/prisma.js';
+import { deleteMessageLater } from '../lib/deleteMessageLater.js';
+import { errorToEmbed, UserInputError } from '../lib/errors.js';
+import { lockChannel, setSlowmode, unlockChannel } from './channelService.js';
+import { compactStatusEmbed, publicActionEmbed } from './embedService.js';
+import { jailUser, setupJail, unjailUser } from './jailService.js';
+import { banUser, kickUser, muteUser, purgeMessages, unbanUser, warnUser } from './moderationService.js';
+import { addRole, removeRole } from './roleService.js';
+import { setAfk } from './afkService.js';
+import { addTempRole } from './tempRoleService.js';
+import { setModLogChannel } from './settingsService.js';
+import { ensureModeratorHasPermission } from './permissionService.js';
+import { setNickname } from './nicknameService.js';
+import { getCommandStates, isCommandEnabled, normalizeCommandName } from './commandSettingsService.js';
+
+export const PREFIX = ',';
+
+const noAutoDelete = new Set(['afk', 'warns', 'cases', 'listcommands']);
+
+function tokenize(input: string): string[] {
+  return input.trim().split(/\s+/).filter(Boolean);
+}
+
+function stripMention(token: string): string {
+  return token.replace(/[<@#&!>]/g, '');
+}
+
+function looksLikeDuration(value: string | undefined): boolean {
+  return Boolean(value && /^\d+[smhd]$/i.test(value));
+}
+
+function reasonFrom(args: string[], start: number, fallback = 'No reason provided'): string {
+  return args.slice(start).join(' ').trim() || fallback;
+}
+
+function requireModerator(message: Message): GuildMember {
+  if (!message.member) throw new UserInputError('This command can only be used in a server.');
+  return message.member;
+}
+
+async function memberFromToken(message: Message, token: string | undefined): Promise<GuildMember> {
+  if (!message.guild || !token) throw new UserInputError('Please mention a user.');
+  const member = await message.guild.members.fetch(stripMention(token)).catch(() => null);
+  if (!member) throw new UserInputError('That user is not a server member.');
+  return member;
+}
+
+async function roleFromToken(message: Message, token: string | undefined): Promise<Role> {
+  if (!message.guild || !token) throw new UserInputError('Please mention a role.');
+  const role = await message.guild.roles.fetch(stripMention(token)).catch(() => null);
+  if (!role) throw new UserInputError('That role was not found.');
+  return role;
+}
+
+async function textChannelFromToken(message: Message, token: string | undefined): Promise<TextChannel> {
+  if (!message.guild || !token) throw new UserInputError('Please mention a text channel.');
+  const channel = await message.guild.channels.fetch(stripMention(token)).catch(() => null);
+  if (!channel || channel.type !== ChannelType.GuildText) throw new UserInputError('That text channel was not found.');
+  return channel;
+}
+
+function currentTextChannel(message: Message): GuildTextBasedChannel {
+  if (!('guildId' in message.channel)) throw new UserInputError('This command can only be used in a server text channel.');
+  return message.channel as GuildTextBasedChannel;
+}
+
+function checkMarkIcon(message: Message): string {
+  return message.guild?.emojis.cache.find((emoji) => emoji.name === 'check_mark')?.toString() ?? '✅';
+}
+
+async function warningsEmbed(message: Message, moderator: GuildMember, target: GuildMember): Promise<EmbedBuilder> {
+  ensureModeratorHasPermission(moderator, PermissionFlagsBits.ModerateMembers);
+  const now = new Date();
+  await prisma.warning.updateMany({
+    where: { guildId: target.guild.id, userId: target.id, active: true, expiresAt: { lte: now } },
+    data: { active: false },
+  });
+  const warnings = await prisma.warning.findMany({
+    where: { guildId: target.guild.id, userId: target.id, active: true, expiresAt: { gt: now } },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+  });
+  const warningIcon = message.guild?.emojis.cache.find((emoji) => emoji.name === 'warning')?.toString() ?? '⚠️';
+  const lines = warnings.length
+    ? warnings.map((warning, index) => `> **${index + 1}. <@${warning.moderatorId}>:**\n> ${warning.reason}`).join('\n')
+    : '> No active warnings.';
+  return new EmbedBuilder()
+    .setColor(0xf59e0b)
+    .setAuthor({ name: `@${target.user.username}`, iconURL: target.user.displayAvatarURL() })
+    .setDescription(`${warningIcon} **${warnings.length} warn${warnings.length === 1 ? '' : 's'} found**\n\n${lines}`);
+}
+
+async function casesEmbed(moderator: GuildMember, target: GuildMember): Promise<EmbedBuilder> {
+  ensureModeratorHasPermission(moderator, PermissionFlagsBits.ModerateMembers);
+  const where = { guildId: target.guild.id, OR: [{ targetUserId: target.id }, { moderatorId: target.id }] };
+  const totalCases = await prisma.moderationLog.count({ where });
+  const logs = await prisma.moderationLog.findMany({ where, orderBy: { createdAt: 'desc' }, take: 15 });
+  const lines = logs.length
+    ? logs
+        .map((log) => {
+          const direction = log.targetUserId === target.id ? 'received' : 'performed';
+          const otherUserId = log.targetUserId === target.id ? log.moderatorId : log.targetUserId;
+          const otherUser = otherUserId ? `<@${otherUserId}>` : 'System';
+          const date = `<t:${Math.floor(log.createdAt.getTime() / 1000)}:R>`;
+          const reason = log.reason ? `\n> ${log.reason}` : '';
+          return `> **#${log.caseId} ${log.action}** ${direction} ${date}\n> ${direction === 'received' ? 'Moderator' : 'Target'}: ${otherUser}${reason}`;
+        })
+        .join('\n\n')
+    : '> No moderation cases found.';
+  return new EmbedBuilder()
+    .setColor(0x38bdf8)
+    .setAuthor({ name: `@${target.user.username}`, iconURL: target.user.displayAvatarURL() })
+    .setTitle('Moderation Cases')
+    .setDescription(`**${totalCases} total case${totalCases === 1 ? '' : 's'}**\n\n${lines}`);
+}
+
+async function listCommandsEmbed(message: Message): Promise<EmbedBuilder> {
+  if (!message.guild) throw new UserInputError('This command can only be used in a server.');
+  const states = await getCommandStates(message.guild.id);
+  const enabledByName = new Map(states.map((state) => [state.name, state.enabled]));
+  const mark = (name: string) => (enabledByName.get(name) === false ? 'disabled' : 'enabled');
+  const groups: Array<[string, string[]]> = [
+    ['Moderation', ['warn', 'warns', 'cases', 'mute', 'kick', 'ban', 'unban', 'purge']],
+    ['Jail', ['jailsetup', 'jail', 'unjail']],
+    ['Roles', ['roleadd', 'roleremove', 'temproleadd']],
+    ['Channel Tools', ['slowmode', 'lock', 'unlock']],
+    ['Utility / Config', ['afk', 'modlog', 'nickname', 'listcommands']],
+  ];
+  return new EmbedBuilder()
+    .setColor(0x38bdf8)
+    .setTitle('Available Commands')
+    .setDescription(groups.map(([group, commands]) => `**${group}**\n${commands.map((name) => `\`,${name}\` - ${mark(name)}`).join('\n')}`).join('\n\n'));
+}
+
+async function executePrefixCommand(message: Message, commandName: string, args: string[]): Promise<EmbedBuilder> {
+  const moderator = requireModerator(message);
+  const icon = checkMarkIcon(message);
+
+  switch (commandName) {
+    case 'warn': {
+      const target = await memberFromToken(message, args[0]);
+      const reason = reasonFrom(args, 1);
+      const caseId = await warnUser(moderator, target, reason, message.channel.id);
+      return publicActionEmbed({ icon, target: target.user, action: 'warned', reason, duration: '30 days', caseId });
+    }
+    case 'warns':
+      return warningsEmbed(message, moderator, await memberFromToken(message, args[0]));
+    case 'cases':
+      return casesEmbed(moderator, await memberFromToken(message, args[0]));
+    case 'listcommands':
+      return listCommandsEmbed(message);
+    case 'mute': {
+      if (!args[1]) throw new UserInputError('Usage: ,mute @user 10m reason');
+      const target = await memberFromToken(message, args[0]);
+      const reason = reasonFrom(args, 2);
+      const caseId = await muteUser(moderator, target, args[1], reason, message.channel.id);
+      return publicActionEmbed({ icon, target: target.user, action: 'muted', reason, duration: args[1], caseId });
+    }
+    case 'kick': {
+      const target = await memberFromToken(message, args[0]);
+      const reason = reasonFrom(args, 1);
+      const caseId = await kickUser(moderator, target, reason, message.channel.id);
+      return publicActionEmbed({ icon, target: target.user, action: 'kicked', reason, caseId });
+    }
+    case 'ban': {
+      const target = await memberFromToken(message, args[0]);
+      const maybeDays = Number(args[1]);
+      const hasDays = Number.isInteger(maybeDays) && args[1] !== undefined;
+      const reason = reasonFrom(args, hasDays ? 2 : 1);
+      const caseId = await banUser(moderator, target, reason, hasDays ? maybeDays : 0, message.channel.id);
+      return publicActionEmbed({ icon, target: target.user, action: 'banned', reason, caseId });
+    }
+    case 'unban': {
+      const userId = args[0] ? stripMention(args[0]) : undefined;
+      if (!userId) throw new UserInputError('Usage: ,unban user_id reason');
+      const reason = reasonFrom(args, 1);
+      const caseId = await unbanUser(moderator.guild, moderator, userId, reason, message.channel.id);
+      return publicActionEmbed({ icon, action: 'unbanned a user', reason, caseId, details: userId });
+    }
+    case 'jail': {
+      const duration = looksLikeDuration(args[1]) ? args[1] : undefined;
+      const target = await memberFromToken(message, args[0]);
+      const reason = reasonFrom(args, duration ? 2 : 1);
+      const result = await jailUser(moderator, target, reason, duration);
+      return publicActionEmbed({ icon, target: target.user, action: 'jailed', reason, duration, caseId: result.caseId });
+    }
+    case 'unjail': {
+      const target = await memberFromToken(message, args[0]);
+      const reason = reasonFrom(args, 1, 'Unjail');
+      const result = await unjailUser(moderator.guild, target, moderator.id, reason);
+      return publicActionEmbed({ icon, target: target.user, action: 'unjailed', reason, caseId: result.caseId });
+    }
+    case 'jailsetup': {
+      const result = await setupJail(moderator, await roleFromToken(message, args[0]), await textChannelFromToken(message, args[1]));
+      return publicActionEmbed({ icon, action: 'configured jail', caseId: result.caseId, details: `${result.updatedChannels} channels updated` });
+    }
+    case 'modlog': {
+      const channel = await textChannelFromToken(message, args[0]);
+      const caseId = await setModLogChannel(moderator, channel);
+      return publicActionEmbed({ icon, action: 'set the moderation log channel', caseId, details: `${channel}` });
+    }
+    case 'nickname':
+    case 'nick': {
+      const target = await memberFromToken(message, args[0]);
+      const rawNickname = args.slice(1).join(' ').trim();
+      if (!rawNickname) throw new UserInputError('Usage: ,nickname @user new nickname');
+      const nickname = rawNickname.toLowerCase() === 'reset' ? null : rawNickname;
+      const caseId = await setNickname(moderator, target, nickname, 'Nickname command');
+      return publicActionEmbed({ icon, target: target.user, action: nickname ? 'had their nickname changed' : 'had their nickname reset', caseId, details: nickname ?? 'Reset' });
+    }
+    case 'afk': {
+      const reason = reasonFrom(args, 0, 'AFK');
+      await setAfk(moderator, reason);
+      return compactStatusEmbed(`✅ ${moderator}: You're now AFK with the status: **${reason}**`);
+    }
+    case 'roleadd': {
+      const target = await memberFromToken(message, args[0]);
+      const role = await roleFromToken(message, args[1]);
+      const reason = reasonFrom(args, 2);
+      const caseId = await addRole(moderator, target, role, reason);
+      return publicActionEmbed({ icon, target: target.user, action: 'received a role', reason, caseId, details: role.name });
+    }
+    case 'roleremove': {
+      const target = await memberFromToken(message, args[0]);
+      const role = await roleFromToken(message, args[1]);
+      const reason = reasonFrom(args, 2);
+      const caseId = await removeRole(moderator, target, role, reason);
+      return publicActionEmbed({ icon, target: target.user, action: 'lost a role', reason, caseId, details: role.name });
+    }
+    case 'temproleadd': {
+      if (!args[2]) throw new UserInputError('Usage: ,temproleadd @user @role 7d reason');
+      const target = await memberFromToken(message, args[0]);
+      const role = await roleFromToken(message, args[1]);
+      const reason = reasonFrom(args, 3);
+      const caseId = await addTempRole(moderator, target, role, args[2], reason);
+      return publicActionEmbed({ icon, target: target.user, action: 'received a temporary role', reason, duration: args[2], caseId, details: role.name });
+    }
+    case 'purge': {
+      const amount = Number(args[0]);
+      if (!Number.isInteger(amount)) throw new UserInputError('Usage: ,purge 20 [@user] [reason]');
+      const possibleUser = args[1]?.startsWith('<@') ? stripMention(args[1]) : undefined;
+      const result = await purgeMessages(moderator, currentTextChannel(message), amount, reasonFrom(args, possibleUser ? 2 : 1), possibleUser);
+      return publicActionEmbed({ icon, action: 'purged messages', caseId: result.caseId, details: `${result.deleted} messages deleted` });
+    }
+    case 'slowmode': {
+      const seconds = Number(args[0]);
+      if (!Number.isInteger(seconds)) throw new UserInputError('Usage: ,slowmode 5 reason');
+      const caseId = await setSlowmode(moderator, currentTextChannel(message), seconds, reasonFrom(args, 1));
+      return publicActionEmbed({ icon, action: 'updated slowmode', duration: `${seconds}s`, caseId });
+    }
+    case 'lock': {
+      const hasChannel = args[0]?.startsWith('<#');
+      const channel = hasChannel ? await textChannelFromToken(message, args[0]) : currentTextChannel(message);
+      const caseId = await lockChannel(moderator, channel, reasonFrom(args, hasChannel ? 1 : 0));
+      return publicActionEmbed({ icon, action: 'locked a channel', caseId, details: `${channel}` });
+    }
+    case 'unlock': {
+      const hasChannel = args[0]?.startsWith('<#');
+      const channel = hasChannel ? await textChannelFromToken(message, args[0]) : currentTextChannel(message);
+      const caseId = await unlockChannel(moderator, channel, reasonFrom(args, hasChannel ? 1 : 0));
+      return publicActionEmbed({ icon, action: 'unlocked a channel', caseId, details: `${channel}` });
+    }
+    default:
+      throw new UserInputError('Unknown command. Use ,listcommands.');
+  }
+}
+
+export async function handlePrefixCommand(message: Message): Promise<boolean> {
+  if (!message.guild || message.author.bot || !message.content.startsWith(PREFIX)) return false;
+  const [rawName, ...args] = tokenize(message.content.slice(PREFIX.length));
+  if (!rawName) return false;
+  const commandName = rawName.toLowerCase();
+  const normalizedCommandName = normalizeCommandName(commandName);
+  const shouldAutoDelete = !noAutoDelete.has(commandName);
+
+  if (!(await isCommandEnabled(message.guild.id, normalizedCommandName))) {
+    const reply = await message.reply({ embeds: [errorToEmbed(new UserInputError('This command is currently disabled.'))] });
+    deleteMessageLater(reply);
+    return true;
+  }
+
+  if (shouldAutoDelete) deleteMessageLater(message);
+
+  try {
+    const embed = await executePrefixCommand(message, commandName, args);
+    const reply = await message.reply({ embeds: [embed] });
+    if (shouldAutoDelete) deleteMessageLater(reply);
+  } catch (error) {
+    const reply = await message.reply({ embeds: [errorToEmbed(error)] }).catch(() => null);
+    if (reply && shouldAutoDelete) deleteMessageLater(reply);
+  }
+
+  return true;
+}
