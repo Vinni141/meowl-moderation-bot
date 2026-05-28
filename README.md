@@ -87,6 +87,8 @@ Prefix commands use `,`:
 - `,mute @user 10m reason`
 - `,kick @user reason`
 - `,ban @user 0 reason`
+- `,s`
+- `,s 2`
 - `,jailsetup @role #channel`
 - `,jail @user 7d reason`
 - `,unjail @user reason`
@@ -100,6 +102,7 @@ Prefix commands use `,`:
 - `,unlock #channel reason`
 
 Warnings expire automatically after 30 days. Mutes, jails, and temporary roles are processed by the scheduler.
+Ban commands require a Discord button confirmation before the ban is executed. `,s` snipes deleted non-bot messages in the current channel, for example `,s 2` for the last two deleted messages.
 
 ## Running
 

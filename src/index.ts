@@ -4,6 +4,7 @@ import { prisma } from './database/prisma.js';
 import { stopDashboard } from './services/dashboardService.js';
 import { handleInteractionCreate } from './events/interactionCreate.js';
 import { handleMessageCreate } from './events/messageCreate.js';
+import { handleMessageDelete } from './events/messageDelete.js';
 import { handleReady } from './events/ready.js';
 import { handleGuildBanAdd } from './events/guildBanAdd.js';
 
@@ -15,12 +16,13 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
   ],
-  partials: [Partials.Channel],
+  partials: [Partials.Channel, Partials.Message],
 });
 
 client.once('ready', (readyClient) => void handleReady(readyClient));
 client.on('interactionCreate', (interaction) => void handleInteractionCreate(interaction));
 client.on('messageCreate', (message) => void handleMessageCreate(message));
+client.on('messageDelete', (message) => void handleMessageDelete(message));
 client.on('guildBanAdd', (ban) => void handleGuildBanAdd(ban));
 client.on('error', (error) => console.error('Discord client error', error));
 client.on('shardError', (error) => console.error('Discord shard error', error));

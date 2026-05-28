@@ -5,300 +5,137 @@ import {
   type GuildMember,
   type GuildTextBasedChannel,
   type Message,
+  type MessageCreateOptions,
   type Role,
   type TextChannel,
 } from 'discord.js';
 import { prisma } from '../database/prisma.js';
+import { createBanConfirmation } from './banConfirmationService.js';
 import { deleteMessageLater } from '../lib/deleteMessageLater.js';
 import { errorToEmbed, UserInputError } from '../lib/errors.js';
 import { lockChannel, setSlowmode, unlockChannel } from './channelService.js';
 import { compactStatusEmbed, publicActionEmbed } from './embedService.js';
 import { jailUser, setupJail, unjailUser } from './jailService.js';
-import { banUser, kickUser, muteUser, purgeMessages, unbanUser, warnUser } from './moderationService.js';
+import { kickUser, muteUser, purgeMessages, unbanUser, warnUser } from './moderationService.js';
 import { addRole, removeRole } from './roleService.js';
 import { setAfk } from './afkService.js';
-import { addTempRole } from './tempRoleService.js';
-import { setModLogChannel } from './settingsService.js';
-import { ensureModeratorHasPermission } from './permissionService.js';
-import { setNickname } from './nicknameService.js';
-import { getCommandStates, isCommandEnabled, normalizeCommandName } from './commandSettingsService.js';
+importÈY[\›ÛHHœ›ÛH	Ë‹İ[\›ÛTÙ\šXÙKšœÉÎÂš[\ÜÈÙ][ÙÙĞÚ[›™[Hœ›ÛH	Ë‹ÜÙ][™ÜÔÙ\šXÙKšœÉÎÂš[\ÜÈ[œİ\™S[Ù\˜]Ü’\Ô\›Z\ÜÚ[ÛˆHœ›ÛH	Ë‹Ü\›Z\ÜÚ[Û”Ù\šXÙKšœÉÎÂš[\ÜÈÙ]šXÚÛ˜[YHHœ›ÛH	Ë‹ÛšXÚÛ˜[YTÙ\šXÙKšœÉÎÂš[\ÜÈÙ]ÛÛ[X[™İ]\Ë\ĞÛÛ[X[™[˜X›Y›Ü›X[^™PÛÛ[X[™˜[YHHœ›ÛH	Ë‹ØÛÛ[X[™Ù][™ÜÔÙ\šXÙKšœÉÎÂš[\ÜÈZ[Ûš\Q[X™YHœ›ÛH	Ë‹ÜÛš\TÙ\šXÙKšœÉÎÂ‚™^ÜÛÛœİ‘Q’VH	Ë	ÎÂ‚™[˜İ[ÛˆÚÙ[š^™J[œ]ˆİš[™ÊNˆİš[™Ö×HÂˆ™]\›ˆ[œ]š[J
+KœÜ]
+×ÊËÊK™š[\Š›ÛÛX[ŠNÂŸB‚™[˜İ[Ûˆİš\Y[[ÛŠÚÙ[ˆİš[™ÊNˆİš[™ÈÂˆ™]\›ˆÚÙ[‹œ™\XÙJÖÏÉˆO—KÙË	ÉÊNÂŸB‚™[˜İ[ÛˆÛÚÜÓZÙQ\˜][ÛŠ˜[YNˆİš[™È[™Yš[™Y
+Nˆ›ÛÛX[ˆÂˆ™]\›ˆ›ÛÛX[Š˜[YH	‰ˆ×—
+ÖÜÛZIÚK\İ
+˜[YJJNÂŸB‚˜\Ş[˜È[˜İ[ÛˆY[X™\‘œ›ÛUÚÙ[ŠY\ÜØYÙNˆY\ÜØYÙKÚÙ[ˆİš[™È[™Yš[™Y
+Nˆ›ÛZ\ÙOİZ[Y[X™\ˆÂˆYˆ
+[Y\ÜØYÙK™İZ[]ÚÙ[ŠH›İÈ™]È\Ù\’[œ]\œ›ÜŠ	ÔX\ÙHY[[ÛˆH\Ù\‹‰ÊNÂˆÛÛœİYHİš\Y[[ÛŠÚÙ[ŠNÂˆÛÛœİY[X™\ˆH]ØZ]Y\ÜØYÙK™İZ[›Y[X™\œË™™]Ú
+Y
+K˜Ø]Ú
 
-export const PREFIX = ',';
 
-const noAutoDelete = new Set(['afk', 'warns', 'cases', 'listcommands']);
+HOˆ[
+NÂˆYˆ
+[Y[X™\ŠH›İÈ™]È\Ù\’[œ]\œ›ÜŠ	Õ]\Ù\ˆ\È›İHÙ\™\ˆY[X™\‹‰ÊNÂˆ™]\›ˆY[X™\ÂŸB‚˜\Ş[˜È[˜İ[Ûˆ›ÛQœ›ÛUÚÙ[ŠY\ÜØYÙNˆY\ÜØYÙKÚÙ[ˆİš[™È[™Yš[™Y
+Nˆ›ÛZ\ÙO›ÛOˆÂˆYˆ
+[Y\ÜØYÙK™İZ[]ÚÙ[ŠH›İÈ™]È\Ù\’[œ]\œ›ÜŠ	ÔX\ÙHY[[ÛˆH›ÛK‰ÊNÂˆÛÛœİYHİš\Y[[ÛŠÚÙ[ŠNÂˆÛÛœİ›ÛHH]ØZ]Y\ÜØYÙK™İZ[œ›Û\Ë™™]Ú
+Y
+K˜Ø]Ú
 
-function tokenize(input: string): string[] {
-  return input.trim().split(/\s+/).filter(Boolean);
-}
 
-function stripMention(token: string): string {
-  return token.replace(/[<@#&!>]/g, '');
-}
+HOˆ[
+NÂˆYˆ
+\›ÛJH›İÈ™]È\Ù\’[œ]\œ›ÜŠ	Õ]›ÛHØ\È›İ›İ[™‰ÊNÂˆ™]\›ˆ›ÛNÂŸB‚˜\Ş[˜È[˜İ[Ûˆ^Ú[›™[œ›ÛUÚÙ[ŠY\ÜØYÙNˆY\ÜØYÙKÚÙ[ˆİš[™È[™Yš[™Y
+Nˆ›ÛZ\ÙO^Ú[›™[ˆÂˆYˆ
+[Y\ÜØYÙK™İZ[]ÚÙ[ŠH›İÈ™]È\Ù\’[œ]\œ›ÜŠ	ÔX\ÙHY[[ÛˆH^Ú[›™[‰ÊNÂˆÛÛœİYHİš\Y[[ÛŠÚÙ[ŠNÂˆÛÛœİÚ[›™[H]ØZ]Y\ÜØYÙK™İZ[˜Ú[›™[Ë™™]Ú
+Y
+K˜Ø]Ú
 
-function looksLikeDuration(value: string | undefined): boolean {
-  return Boolean(value && /^\d+[smhd]$/i.test(value));
-}
 
-function reasonFrom(args: string[], start: number, fallback = 'No reason provided'): string {
-  return args.slice(start).join(' ').trim() || fallback;
-}
+HOˆ[
+NÂˆYˆ
+XÚ[›™[Ú[›™[\HOOHÚ[›™[\K‘İZ[^
+HÂˆ›İÈ™]È\Ù\’[œ]\œ›ÜŠ	Õ]^Ú[›™[Ø\È›İ›İ[™‰ÊNÂˆBˆ™]\›ˆÚ[›™[ÂŸB‚™[˜İ[Ûˆ™\]Z\™S[Ù\˜]ÜŠY\ÜØYÙNˆY\ÜØYÙJNˆİZ[Y[X™\ˆÂˆYˆ
+[Y\ÜØYÙK›Y[X™\ŠH›İÈ™]È\Ù\’[œ]\œ›ÜŠ	Õ\ÈÛÛ[X[™Ø[ˆÛ›H™H\ÙY[ˆHÙ\™\‹‰ÊNÂˆ™]\›ˆY\ÜØYÙK›Y[X™\ÂŸB‚™[˜İ[Ûˆİ\œ™[^Ú[›™[
+Y\ÜØYÙNˆY\ÜØYÙJNˆİZ[^˜\ÙYÚ[›™[ÂˆYˆ
+J	ÙİZ[Y	È[ˆY\ÜØYÙK˜Ú[›™[
+JH›İÈ™]È\Ù\’[œ]\œ›ÜŠ	Õ\ÈÛÛ[X[™Ø[ˆÛ›H™H\ÙY[ˆHÙ\™\ˆ^Ú[›™[‰ÊNÂˆ™]\›ˆY\ÜØYÙK˜Ú[›™[\ÈİZ[^˜\ÙYÚ[›™[ÂŸB‚™[˜İ[Ûˆ™X\ÛÛ‘œ›ÛJ\™ÜÎˆİš[™Ö×Kİ\ˆ[X™\‹˜[˜XÚÈH	Ó›È™X\ÛÛˆ›İšYY	ÊNˆİš[™ÈÂˆ™]\›ˆ\™ÜËœÛXÙJİ\
+Kš›Ú[Š	È	ÊKš[J
+H˜[˜XÚÎÂŸB‚˜\Ş[˜È[˜İ[ÛˆÙ[™™Yš^™\ÜÛœÙJY\ÜØYÙNˆY\ÜØYÙKÜ[ÛœÎˆY\ÜØYÙPÜ™X]SÜ[ÛœÊNˆ›ÛZ\ÙOY\ÜØYÙH[ˆÂˆ™]\›ˆY\ÜØYÙKœ™\JÜ[ÛœÊK˜Ø]Ú
 
-function requireModerator(message: Message): GuildMember {
-  if (!message.member) throw new UserInputError('This command can only be used in a server.');
-  return message.member;
-}
 
-async function memberFromToken(message: Message, token: string | undefined): Promise<GuildMember> {
-  if (!message.guild || !token) throw new UserInputError('Please mention a user.');
-  const member = await message.guild.members.fetch(stripMention(token)).catch(() => null);
-  if (!member) throw new UserInputError('That user is not a server member.');
-  return member;
-}
+HOˆY\ÜØYÙK˜Ú[›™[œÙ[™
+Ü[ÛœÊK˜Ø]Ú
 
-async function roleFromToken(message: Message, token: string | undefined): Promise<Role> {
-  if (!message.guild || !token) throw new UserInputError('Please mention a role.');
-  const role = await message.guild.roles.fetch(stripMention(token)).catch(() => null);
-  if (!role) throw new UserInputError('That role was not found.');
-  return role;
-}
 
-async function textChannelFromToken(message: Message, token: string | undefined): Promise<TextChannel> {
-  if (!message.guild || !token) throw new UserInputError('Please mention a text channel.');
-  const channel = await message.guild.channels.fetch(stripMention(token)).catch(() => null);
-  if (!channel || channel.type !== ChannelType.GuildText) throw new UserInputError('That text channel was not found.');
-  return channel;
-}
+HOˆ[
+JNÂŸB‚™[˜İ[ÛˆÚXÚÓX\šÒXÛÛŠY\ÜØYÙNˆY\ÜØYÙJNˆİš[™ÈÂˆ™]\›ˆY\ÜØYÙK™İZ[Ë™[[Úš\Ë˜ØXÚK™š[™
 
-function currentTextChannel(message: Message): GuildTextBasedChannel {
-  if (!('guildId' in message.channel)) throw new UserInputError('This command can only be used in a server text channel.');
-  return message.channel as GuildTextBasedChannel;
-}
+[[ÚšJHOˆ[[ÚšK›˜[YHOOH	ØÚXÚ×ÛX\šÉÊOËÔİš[™Ê
+HÏÈ	ğè±dø )‰ÎÂŸB‚˜\Ş[˜È[˜İ[ÛˆØ\›š[™ÜÑ[X™Y
+Y\ÜØYÙNˆY\ÜØYÙK[Ù\˜]ÜˆİZ[Y[X™\‹\™Ù]ˆİZ[Y[X™\ŠNˆ›ÛZ\ÙO[X™YZ[\ˆÂˆ[œİ\™S[Ù\˜]Ü’\Ô\›Z\ÜÚ[ÛŠ[Ù\˜]Ü‹\›Z\ÜÚ[Û‘›YÜĞš]Ë“[Ù\˜]SY[X™\œÊNÂˆÛÛœİ›İÈH™]È]J
+NÂ‚ˆ]ØZ]š\ÛXKØ\›š[™Ë\]SX[JÂˆÚ\™NˆÂˆİZ[Yˆ\™Ù]™İZ[šYˆ\Ù\’Yˆ\™Ù]šYˆXİ]™NˆYKˆ^\™\Ğ]ˆÈNˆ›İÈKˆKˆ]NˆÈXİ]™Nˆ˜[ÙHKˆJNÂ‚ˆÛÛœİØ\›š[™ÜÈH]ØZ]š\ÛXKØ\›š[™Ë™š[™X[JÂˆÚ\™NˆÂˆİZ[Yˆ\™Ù]™İZ[šYˆ\Ù\’Yˆ\™Ù]šYˆXİ]™NˆYKˆ^\™\Ğ]ˆÈİˆ›İÈKˆKˆÜ™\NˆÈÜ™X]Y]ˆ	Ù\ØÉÈKˆZÙNˆLˆJNÂ‚ˆÛÛœİØ\›š[™ÒXÛÛˆHY\ÜØYÙK™İZ[Ë™[[Úš\Ë˜ØXÚK™š[™
 
-function checkMarkIcon(message: Message): string {
-  return message.guild?.emojis.cache.find((emoji) => emoji.name === 'check_mark')?.toString() ?? 'âœ…';
-}
+[[ÚšJHOˆ[[ÚšK›˜[YHOOH	İØ\›š[™ÉÊOËÔİš[™Ê
+HÏÈ	ğè±hp¨0ëğ®0£ÉÎÂˆÛÛœİÛİ[X™[H	İØ\›š[™ÜË›[™İHØ\›‰İØ\›š[™ÜË›[™İOOHHÈ	ÉÈˆ	ÜÉßH›İ[™ÂˆÛÛœİØ\›š[™Ó[™\ÈHØ\›š[™ÜË›[™İˆÈØ\›š[™ÜÂˆ›X\
 
-async function warningsEmbed(message: Message, moderator: GuildMember, target: GuildMember): Promise<EmbedBuilder> {
-  ensureModeratorHasPermission(moderator, PermissionFlagsBits.ModerateMembers);
-  const now = new Date();
-  await prisma.warning.updateMany({
-    where: { guildId: target.guild.id, userId: target.id, active: true, expiresAt: { lte: now } },
-    data: { active: false },
-  });
-  const warnings = await prisma.warning.findMany({
-    where: { guildId: target.guild.id, userId: target.id, active: true, expiresAt: { gt: now } },
-    orderBy: { createdAt: 'desc' },
-    take: 10,
-  });
-  const warningIcon = message.guild?.emojis.cache.find((emoji) => emoji.name === 'warning')?.toString() ?? 'âš ï¸';
-  const lines = warnings.length
-    ? warnings.map((warning, index) => `> **${index + 1}. <@${warning.moderatorId}>:**\n> ${warning.reason}`).join('\n')
-    : '> No active warnings.';
-  return new EmbedBuilder()
-    .setColor(0xf59e0b)
-    .setAuthor({ name: `@${target.user.username}`, iconURL: target.user.displayAvatarURL() })
-    .setDescription(`${warningIcon} **${warnings.length} warn${warnings.length === 1 ? '' : 's'} found**\n\n${lines}`);
-}
+Ø\›š[™Ë[™^
+HOˆÂˆÛÛœİ[Ù\˜]Ü“X™[HØ\›š[™Ë›[Ù\˜]Ü’YÈ	İØ\›š[™Ë›[Ù\˜]Ü’YO˜ˆ	Õ[šÛ›İÛˆ[Ù\˜]Ü‰ÎÂˆ™]\›ˆˆ
+Š‰Ú[™^
+È_Kˆ	Û[Ù\˜]Ü“X™[NŠŠ—ˆ	İØ\›š[™Ëœ™X\ÛÛŸXÂˆJBˆš›Ú[Š	×‰ÊBˆˆ	Ïˆ›ÈXİ]™HØ\›š[™ÜË‰ÎÂ‚ˆ™]\›ˆ™]È[X™YZ[\Š
+BˆœÙ]ÛÛÜŠNYLŠBˆœÙ]]]ÜŠÂˆ˜[YNˆ	İ\™Ù]\Ù\‹\Ù\›˜[Y_XˆXÛÛ•T“ˆ\™Ù]\Ù\‹™\Ü^P]˜]\•T“
 
-async function casesEmbed(moderator: GuildMember, target: GuildMember): Promise<EmbedBuilder> {
-  ensureModeratorHasPermission(moderator, PermissionFlagsBits.ModerateMembers);
-  const where = { guildId: target.guild.id, OR: [{ targetUserId: target.id }, { moderatorId: target.id }] };
-  const totalCases = await prisma.moderationLog.count({ where });
-  const logs = await prisma.moderationLog.findMany({ where, orderBy: { createdAt: 'desc' }, take: 15 });
-  const lines = logs.length
-    ? logs
-        .map((log) => {
-          const direction = log.targetUserId === target.id ? 'received' : 'performed';
-          const otherUserId = log.targetUserId === target.id ? log.moderatorId : log.targetUserId;
-          const otherUser = otherUserId ? `<@${otherUserId}>` : 'System';
-          const date = `<t:${Math.floor(log.createdAt.getTime() / 1000)}:R>`;
-          const reason = log.reason ? `\n> ${log.reason}` : '';
-          return `> **#${log.caseId} ${log.action}** ${direction} ${date}\n> ${direction === 'received' ? 'Moderator' : 'Target'}: ${otherUser}${reason}`;
-        })
-        .join('\n\n')
-    : '> No moderation cases found.';
-  return new EmbedBuilder()
-    .setColor(0x38bdf8)
-    .setAuthor({ name: `@${target.user.username}`, iconURL: target.user.displayAvatarURL() })
-    .setTitle('Moderation Cases')
-    .setDescription(`**${totalCases} total case${totalCases === 1 ? '' : 's'}**\n\n${lines}`);
-}
+KˆJBˆœÙ]\ØÜš\[ÛŠ	İØ\›š[™ÒXÛÛŸH
+Š‰ØÛİ[X™[JŠ——‰İØ\›š[™Ó[™\ßX
+NÂŸB‚˜\Ş[˜È[˜İ[ÛˆØ\Ù\Ñ[X™Y
+[Ù\˜]ÜˆİZ[Y[X™\‹\™Ù]ˆİZ[Y[X™\ŠNˆ›ÛZ\ÙO[X™YZ[\ˆÂˆ[œİ\™S[Ù\˜]Ü’\Ô\›Z\ÜÚ[ÛŠ[Ù\˜]Ü‹\›Z\ÜÚ[Û‘›YÜĞš]Ë“[Ù\˜]SY[X™\œÊNÂˆÛÛœİİ[Ø\Ù\ÈH]ØZ]š\ÛXK›[Ù\˜][Û“ÙË˜Ûİ[
+ÂˆÚ\™NˆÂˆİZ[Yˆ\™Ù]™İZ[šYˆÔˆŞÈ\™Ù]\Ù\’Yˆ\™Ù]šYKÈ[Ù\˜]Ü’Yˆ\™Ù]šYWKˆKˆJNÂˆÛÛœİÙÜÈH]ØZ]š\ÛXK›[Ù\˜][Û“ÙË™š[™X[JÂˆÚ\™NˆÂˆİZ[Yˆ\™Ù]™İZ[šYˆÔˆŞÈ\™Ù]\Ù\’Yˆ\™Ù]šYKÈ[Ù\˜]Ü’Yˆ\™Ù]šYWKˆKˆÜ™\NˆÈÜ™X]Y]ˆ	Ù\ØÉÈKˆZÙNˆMKˆJNÂ‚ˆÛÛœİ[™\ÈHÙÜË›[™İˆÈÙÜÂˆ›X\
 
-async function listCommandsEmbed(message: Message): Promise<EmbedBuilder> {
-  if (!message.guild) throw new UserInputError('This command can only be used in a server.');
-  const states = await getCommandStates(message.guild.id);
-  const enabledByName = new Map(states.map((state) => [state.name, state.enabled]));
-  const mark = (name: string) => (enabledByName.get(name) === false ? 'disabled' : 'enabled');
-  const groups: Array<[string, string[]]> = [
-    ['Moderation', ['warn', 'warns', 'cases', 'mute', 'kick', 'ban', 'unban', 'purge']],
-    ['Jail', ['jailsetup', 'jail', 'unjail']],
-    ['Roles', ['roleadd', 'roleremove', 'temproleadd']],
-    ['Channel Tools', ['slowmode', 'lock', 'unlock']],
-    ['Utility / Config', ['afk', 'modlog', 'nickname', 'listcommands']],
-  ];
-  return new EmbedBuilder()
-    .setColor(0x38bdf8)
-    .setTitle('Available Commands')
-    .setDescription(groups.map(([group, commands]) => `**${group}**\n${commands.map((name) => `\`,${name}\` - ${mark(name)}`).join('\n')}`).join('\n\n'));
-}
+ÙÊHOˆÂˆÛÛœİ\™Xİ[ÛˆHÙË\™Ù]\Ù\’YOOH\™Ù]šYÈ	Ü™XÙZ]™Y	Èˆ	Ü\™›Ü›YY	ÎÂˆÛÛœİİ\•\Ù\’YHÙË\™Ù]\Ù\’YOOH\™Ù]šYÈÙË›[Ù\˜]Ü’YˆÙË\™Ù]\Ù\’YÂˆÛÛœİİ\•\Ù\ˆHİ\•\Ù\’YÈ	Ûİ\•\Ù\’YO˜ˆ	ÔŞ\İ[IÎÂˆÛÛœİ]HH‰ÓX]™›ÛÜŠÙË˜Ü™X]Y]™Ù][YJ
+HÈL
+_N”˜ÂˆÛÛœİ™X\ÛÛˆHÙËœ™X\ÛÛˆÈˆ	ÛÙËœ™X\ÛÛŸXˆ	ÉÎÂˆ™]\›ˆˆ
+Š‰ÈÙË˜Ø\ÙRYH	ÛÙË˜Xİ[ÛŸJŠˆ	Ù\™Xİ[ÛŸH	Ù]_Wˆ	Ù\™Xİ[ÛˆOOH	Ü™XÙZ]™Y	ÈÈ	Ó[Ù\˜]Ü‰Èˆ	Õ\™Ù]	ßNˆ	Ûİ\•\Ù\ŸIÜ™X\ÛÛŸXÂˆJBˆš›Ú[Š	×—‰ÊBˆˆ	Ïˆ›È[Ù\˜][ÛˆØ\Ù\È›İ[™‰ÎÂ‚ˆ™]\›ˆ™]È[X™YZ[\Š
+BˆœÙ]ÛÛÜŠÎ™
+BˆœÙ]]]ÜŠÂˆ˜[YNˆ	İ\™Ù]\Ù\‹\Ù\›˜[Y_XˆXÛÛ•T“ˆ\™Ù]\Ù\‹™\Ü^P]˜]\•T“
 
-async function executePrefixCommand(message: Message, commandName: string, args: string[]): Promise<EmbedBuilder> {
-  const moderator = requireModerator(message);
-  const icon = checkMarkIcon(message);
+KˆJBˆœÙ]]J	Ó[Ù\˜][ÛˆØ\Ù\ÉÊBˆœÙ]\ØÜš\[ÛŠ
+Š‰İİ[Ø\Ù\ßHİ[Ø\ÙIİİ[Ø\Ù\ÈOOHHÈ	ÉÈˆ	ÜÉßJŠ——‰Û[™\ßX
+NÂŸB‚˜\Ş[˜È[˜İ[Ûˆ\İÛÛ[X[™Ñ[X™Y
+Y\ÜØYÙNˆY\ÜØYÙJNˆ›ÛZ\ÙO[X™YZ[\ˆÂˆYˆ
+[Y\ÜØYÙK™İZ[
+H›İÈ™]È\Ù\’[œ]\œ›ÜŠ	Õ\ÈÛÛ[X[™Ø[ˆÛ›H™H\ÙY[ˆHÙ\™\‹‰ÊNÂˆÛÛœİİ]\ÈH]ØZ]Ù]ÛÛ[X[™İ]\ÊY\ÜØYÙK™İZ[šY
+NÂˆÛÛœİ[˜X›YS˜[YHH™]ÈX\
+İ]\Ë›X\
 
-  switch (commandName) {
-    case 'warn': {
-      const target = await memberFromToken(message, args[0]);
-      const reason = reasonFrom(args, 1);
-      const caseId = await warnUser(moderator, target, reason, message.channel.id);
-      return publicActionEmbed({ icon, target: target.user, action: 'warned', reason, duration: '30 days', caseId });
-    }
-    case 'warns':
-      return warningsEmbed(message, moderator, await memberFromToken(message, args[0]));
-    case 'cases':
-      return casesEmbed(moderator, await memberFromToken(message, args[0]));
-    case 'listcommands':
-      return listCommandsEmbed(message);
-    case 'mute': {
-      if (!args[1]) throw new UserInputError('Usage: ,mute @user 10m reason');
-      const target = await memberFromToken(message, args[0]);
-      const reason = reasonFrom(args, 2);
-      const caseId = await muteUser(moderator, target, args[1], reason, message.channel.id);
-      return publicActionEmbed({ icon, target: target.user, action: 'muted', reason, duration: args[1], caseId });
-    }
-    case 'kick': {
-      const target = await memberFromToken(message, args[0]);
-      const reason = reasonFrom(args, 1);
-      const caseId = await kickUser(moderator, target, reason, message.channel.id);
-      return publicActionEmbed({ icon, target: target.user, action: 'kicked', reason, caseId });
-    }
-    case 'ban': {
-      const target = await memberFromToken(message, args[0]);
-      const maybeDays = Number(args[1]);
-      const hasDays = Number.isInteger(maybeDays) && args[1] !== undefined;
-      const reason = reasonFrom(args, hasDays ? 2 : 1);
-      const caseId = await banUser(moderator, target, reason, hasDays ? maybeDays : 0, message.channel.id);
-      return publicActionEmbed({ icon, target: target.user, action: 'banned', reason, caseId });
-    }
-    case 'unban': {
-      const userId = args[0] ? stripMention(args[0]) : undefined;
-      if (!userId) throw new UserInputError('Usage: ,unban user_id reason');
-      const reason = reasonFrom(args, 1);
-      const caseId = await unbanUser(moderator.guild, moderator, userId, reason, message.channel.id);
-      return publicActionEmbed({ icon, action: 'unbanned a user', reason, caseId, details: userId });
-    }
-    case 'jail': {
-      const duration = looksLikeDuration(args[1]) ? args[1] : undefined;
-      const target = await memberFromToken(message, args[0]);
-      const reason = reasonFrom(args, duration ? 2 : 1);
-      const result = await jailUser(moderator, target, reason, duration);
-      return publicActionEmbed({ icon, target: target.user, action: 'jailed', reason, duration, caseId: result.caseId });
-    }
-    case 'unjail': {
-      const target = await memberFromToken(message, args[0]);
-      const reason = reasonFrom(args, 1, 'Unjail');
-      const result = await unjailUser(moderator.guild, target, moderator.id, reason);
-      return publicActionEmbed({ icon, target: target.user, action: 'unjailed', reason, caseId: result.caseId });
-    }
-    case 'jailsetup': {
-      const result = await setupJail(moderator, await roleFromToken(message, args[0]), await textChannelFromToken(message, args[1]));
-      return publicActionEmbed({ icon, action: 'configured jail', caseId: result.caseId, details: `${result.updatedChannels} channels updated` });
-    }
-    case 'modlog': {
-      const channel = await textChannelFromToken(message, args[0]);
-      const caseId = await setModLogChannel(moderator, channel);
-      return publicActionEmbed({ icon, action: 'set the moderation log channel', caseId, details: `${channel}` });
-    }
-    case 'nickname':
-    case 'nick': {
-      const target = await memberFromToken(message, args[0]);
-      const rawNickname = args.slice(1).join(' ').trim();
-      if (!rawNickname) throw new UserInputError('Usage: ,nickname @user new nickname');
-      const nickname = rawNickname.toLowerCase() === 'reset' ? null : rawNickname;
-      const caseId = await setNickname(moderator, target, nickname, 'Nickname command');
-      return publicActionEmbed({ icon, target: target.user, action: nickname ? 'had their nickname changed' : 'had their nickname reset', caseId, details: nickname ?? 'Reset' });
-    }
-    case 'afk': {
-      const reason = reasonFrom(args, 0, 'AFK');
-      await setAfk(moderator, reason);
-      return compactStatusEmbed(`âœ… ${moderator}: You're now AFK with the status: **${reason}**`);
-    }
-    case 'roleadd': {
-      const target = await memberFromToken(message, args[0]);
-      const role = await roleFromToken(message, args[1]);
-      const reason = reasonFrom(args, 2);
-      const caseId = await addRole(moderator, target, role, reason);
-      return publicActionEmbed({ icon, target: target.user, action: 'received a role', reason, caseId, details: role.name });
-    }
-    case 'roleremove': {
-      const target = await memberFromToken(message, args[0]);
-      const role = await roleFromToken(message, args[1]);
-      const reason = reasonFrom(args, 2);
-      const caseId = await removeRole(moderator, target, role, reason);
-      return publicActionEmbed({ icon, target: target.user, action: 'lost a role', reason, caseId, details: role.name });
-    }
-    case 'temproleadd': {
-      if (!args[2]) throw new UserInputError('Usage: ,temproleadd @user @role 7d reason');
-      const target = await memberFromToken(message, args[0]);
-      const role = await roleFromToken(message, args[1]);
-      const reason = reasonFrom(args, 3);
-      const caseId = await addTempRole(moderator, target, role, args[2], reason);
-      return publicActionEmbed({ icon, target: target.user, action: 'received a temporary role', reason, duration: args[2], caseId, details: role.name });
-    }
-    case 'purge': {
-      const amount = Number(args[0]);
-      if (!Number.isInteger(amount)) throw new UserInputError('Usage: ,purge 20 [@user] [reason]');
-      const possibleUser = args[1]?.startsWith('<@') ? stripMention(args[1]) : undefined;
-      const result = await purgeMessages(moderator, currentTextChannel(message), amount, reasonFrom(args, possibleUser ? 2 : 1), possibleUser);
-      return publicActionEmbed({ icon, action: 'purged messages', caseId: result.caseId, details: `${result.deleted} messages deleted` });
-    }
-    case 'slowmode': {
-      const seconds = Number(args[0]);
-      if (!Number.isInteger(seconds)) throw new UserInputError('Usage: ,slowmode 5 reason');
-      const caseId = await setSlowmode(moderator, currentTextChannel(message), seconds, reasonFrom(args, 1));
-      return publicActionEmbed({ icon, action: 'updated slowmode', duration: `${seconds}s`, caseId });
-    }
-    case 'lock': {
-      const hasChannel = args[0]?.startsWith('<#');
-      const channel = hasChannel ? await textChannelFromToken(message, args[0]) : currentTextChannel(message);
-      const caseId = await lockChannel(moderator, channel, reasonFrom(args, hasChannel ? 1 : 0));
-      return publicActionEmbed({ icon, action: 'locked a channel', caseId, details: `${channel}` });
-    }
-    case 'unlock': {
-      const hasChannel = args[0]?.startsWith('<#');
-      const channel = hasChannel ? await textChannelFromToken(message, args[0]) : currentTextChannel(message);
-      const caseId = await unlockChannel(moderator, channel, reasonFrom(args, hasChannel ? 1 : 0));
-      return publicActionEmbed({ icon, action: 'unlocked a channel', caseId, details: `${channel}` });
-    }
-    default:
-      throw new UserInputError('Unknown command. Use ,listcommands.');
-  }
-}
+İ]JHOˆÜİ]K›˜[YKİ]K™[˜X›YJJNÂˆÛÛœİX\šÈH
+˜[YNˆİš[™ÊHOˆ
+[˜X›YS˜[YK™Ù]
+˜[YJHOOH˜[ÙHÈ	Ù\ØX›Y	Èˆ	Ù[˜X›Y	ÊNÂ‚ˆÛÛœİÜ›İ\Îˆ\œ˜^OÜİš[™Ëİš[™Ö×WOˆHÂˆÉÓ[Ù\˜][Û‰ËÉİØ\›‰Ë	İØ\›œÉË	ØØ\Ù\ÉË	Û]]IË	ÚÚXÚÉË	Ø˜[‰Ë	İ[˜˜[‰Ë	Ü\™ÙIË	ÜÉ×WKˆÉÒ˜Z[	ËÉÚ˜Z[Ù]\	Ë	Ú˜Z[	Ë	İ[š˜Z[	×WKˆÉÔ›Û\ÉËÉÜ›ÛXY	Ë	Ü›Û\™[[İ™IË	İ[\›ÛXY	×WKˆÉĞÚ[›™[ÛÛÉËÉÜÛİÛ[ÙIË	ÛØÚÉË	İ[›ØÚÉ×WKˆÉÕ][]HÈÛÛ™šYÉËÉØYšÙÉË	Û[ÙÙÉË	ÛšXÚÛ˜[YIË	Û\İÛÛ[X[™É×WKˆNÂ‚ˆ™]\›ˆ™]È[X™YZ[\Š
+BˆœÙ]ÛÛÜŠÎ™
+BˆœÙ]]J	Ğ]˜Z[X›HÛÛ[X[™ÉÊBˆœÙ]\ØÜš\[ÛŠˆÜ›İ\Âˆ›X\
 
-export async function handlePrefixCommand(message: Message): Promise<boolean> {
-  if (!message.guild || message.author.bot || !message.content.startsWith(PREFIX)) return false;
-  const [rawName, ...args] = tokenize(message.content.slice(PREFIX.length));
-  if (!rawName) return false;
-  const commandName = rawName.toLowerCase();
-  const normalizedCommandName = normalizeCommandName(commandName);
-  const shouldAutoDelete = !noAutoDelete.has(commandName);
+ÙÜ›İ\˜[YKÛÛ[X[™×JHOˆÂˆÛÛœİÛÛ[X[™\İHÛÛ[X[™Ë›X\
 
-  if (!(await isCommandEnabled(message.guild.id, normalizedCommandName))) {
-    const reply = await message.reply({ embeds: [errorToEmbed(new UserInputError('This command is currently disabled.'))] });
-    deleteMessageLater(reply);
-    return true;
-  }
-
-  if (shouldAutoDelete) deleteMessageLater(message);
-
-  try {
-    const embed = await executePrefixCommand(message, commandName, args);
-    const reply = await message.reply({ embeds: [embed] });
-    if (shouldAutoDelete) deleteMessageLater(reply);
-  } catch (error) {
-    const reply = await message.reply({ embeds: [errorToEmbed(error)] }).catch(() => null);
-    if (reply && shouldAutoDelete) deleteMessageLater(reply);
-  }
-
-  return true;
-}
+˜[YJHOˆ	Û˜[Y_WH	ÛX\šÊ˜[YJ_X
+Kš›Ú[Š	×‰ÊNÂˆ™]\›ˆ
+Š‰ÙÜ›İ\˜[Y_JŠ—‰ØÛÛ[X[™\İXÂˆJBˆš›Ú[Š	×—‰ÊKˆ
+NÂŸB‚˜\Ş[˜È[˜İ[Ûˆ^Xİ]T™Yš^ÛÛ[X[™
+Y\ÜØYÙNˆY\ÜØYÙKÛÛ[X[™˜[YNˆİš[™Ë\™ÜÎˆİš[™Ö×JNˆ›ÛZ\ÙO[X™YZ[\ˆ[ˆÂˆÛÛœİ[Ù\˜]ÜˆH™\]Z\™S[Ù\˜]ÜŠY\ÜØYÙJNÂˆÛÛœİXÛÛˆHÚXÚÓX\šÒXÛÛŠY\ÜØYÙJNÂ‚ˆİÚ]Ú
+ÛÛ[X[™˜[YJHÂˆØ\ÙH	İØ\›‰ÎˆÂˆÛÛœİ\™Ù]H]ØZ]Y[X™\‘œ›ÛUÚÙ[ŠY\ÜØYÙK\™ÜÖÌJNÂˆÛÛœİ™X\ÛÛˆH™X\ÛÛ‘œ›ÛJ\™ÜËJNÂˆÛÛœİØ\ÙRYH]ØZ]Ø\›•\Ù\Š[Ù\˜]Ü‹\™Ù]™X\ÛÛ‹Y\ÜØYÙK˜Ú[›™[šY
+NÂˆ™]\›ˆX›XĞXİ[Û‘[X™Y
+ÈXÛÛ‹\™Ù]ˆ\™Ù]\Ù\‹Xİ[Ûˆ	İØ\›™Y	Ë™X\ÛÛ‹\˜][Ûˆ	ÌÌ^\ÉËØ\ÙRYJNÂˆBˆØ\ÙH	İØ\›œÉÎˆÂˆ™]\›ˆØ\›š[™ÜÑ[X™Y
+Y\ÜØYÙK[Ù\˜]Ü‹]ØZ]Y[X™\‘œ›ÛUÚÙ[ŠY\ÜØYÙK\™ÜÖÌJJNÂˆBˆØ\ÙH	ØØ\Ù\ÉÎˆÂˆ™]\›ˆØ\Ù\Ñ[X™Y
+[Ù\˜]Ü‹]ØZ]Y[X™\‘œ›ÛUÚÙ[ŠY\ÜØYÙK\™ÜÖÌJJNÂˆBˆØ\ÙH	Û\İÛÛ[X[™ÉÎˆÂˆ™]\›ˆ\İÛÛ[X[™Ñ[X™Y
+Y\ÜØYÙJNÂˆBˆØ\ÙH	ÜÉÎˆÂˆÛÛœİ[[İ[H\™ÜÖÌHOOH[™Yš[™YÈHˆ[X™\Š\™ÜÖÌJNÂˆ™]\›ˆZ[Ûš\Q[X™Y
+Y\ÜØYÙK[[İ[
+K™[X™YÖÌHÏÈ[ÂˆBˆØ\ÙH	Û]]IÎˆÂˆYˆ
+X\™ÜÖÌWJH›İÈ™]È\Ù\’[œ]\œ›ÜŠ	Õ\ØYÙNˆ]]H\Ù\ˆLH™X\ÛÛ‰ÊNÂˆÛÛœİ\™Ù]H]ØZ]Y[X™\‘œ›ÛUÚÙ[ŠY\ÜØYÙK\™ÜÖÌJNÂˆÛÛœİ™X\ÛÛˆH™X\ÛÛ‘œ›ÛJ\™ÜËŠNÂˆÛÛœİØ\ÙRYH]ØZ]]]U\Ù\Š[Ù\˜]Ü‹\™Ù]\™ÜÖÌWK™X\ÛÛ‹Y\ÜØYÙK˜Ú[›™[šY
+NÂˆ™]\›ˆX›XĞXİ[Û‘[X™Y
+ÈXÛÛ‹\™Ù]ˆ\™Ù]\Ù\‹Xİ[Ûˆ	Û]]Y	Ë™X\ÛÛ‹\˜][Ûˆ\™ÜÖÌWKØ\ÙRYJNÂˆBˆØ\ÙH	ÚÚXÚÉÎˆÂˆÛÛœİ\™Ù]H]ØZ]Y[X™\‘œ›ÛUÚÙ[ŠY\ÜØYÙK\™ÜÖÌJNÂˆÛÛœİ™X\ÛÛˆH™X\ÛÛ‘œ›ÛJ\™ÜËJNÂˆÛÛœİØ\ÙRYH]ØZ]ÚXÚÕ\Ù\Š[Ù\˜]Ü‹\™Ù]™X\ÛÛ‹Y\ÜØYÙK˜Ú[›™[šY
+NÂˆ™]\›ˆX›XĞXİ[Û‘[X™Y
+ÈXÛÛ‹\™Ù]ˆ\™Ù]\Ù\‹Xİ[Ûˆ	ÚÚXÚÙY	Ë™X\ÛÛ‹Ø\ÙRYJNÂˆBˆØ\ÙH	Ø˜[‰ÎˆÂˆÛÛœİX^X™Q^\ÈH[X™\Š\™ÜÖÌWJNÂˆÛÛœİ\Ñ^\ÈH[X™\‹š\Ò[YÙ\ŠX^X™Q^\ÊH	‰ˆ\™ÜÖÌWHOOH[™Yš[™YÂˆÛÛœİ\™Ù]H]ØZ]Y[X™\‘œ›ÛUÚÙ[ŠY\ÜØYÙK\™ÜÖÌJNÂˆÛÛœİ™X\ÛÛˆH™X\ÛÛ‘œ›ÛJ\™ÜË\Ñ^\ÈÈˆˆJNÂˆÛÛœİ›Û\H]ØZ]Ù[™™Yš^™\ÜÛœÙJˆY\ÜØYÙKˆÜ™X]P˜[ÛÛ™š\›X][ÛŠ[Ù\˜]Ü‹\™Ù]™X\ÛÛ‹\Ñ^\ÈÈX^X™Q^\ÈˆY\ÜØYÙK˜Ú[›™[šY
+Kˆ
+NÂˆYˆ
+›Û\
+H[]SY\ÜØYÙS]\Š›Û\ŒÌ
+NÂˆ™]\›ˆ[ÂˆBˆØ\ÙH	İ[˜˜[‰ÎˆÂˆÛÛœİ\Ù\’YH\™ÜÖÌHÈİš\Y[[ÛŠ\™ÜÖÌJHˆ[™Yš[™YÂˆYˆ
+]\Ù\’Y
+H›İÈ™]È\Ù\’[œ]\œ›ÜŠ	Õ\ØYÙNˆ[˜˜[ˆ\Ù\—ÚY™X\ÛÛ‰ÊNÂˆÛÛœİ™X\ÛÛˆH™X\ÛÛ‘œ›ÛJ\™ÜËK	Ó›È™X\ÛÛˆ›İšYY	ÊNÂˆÛÛœİØ\ÙRYH]ØZ][˜˜[•\Ù\Š[Ù\˜]Ü‹™İZ[[Ù\˜]Ü‹\Ù\’Y™X\ÛÛ‹Y\ÜØYÙK˜Ú[›™[šY
+NÂˆ™]\›ˆX›XĞXİ[Û‘[X™Y‡²–6öâÂ7F–öã¢wVæ&ææVBW6W"rÂ&V6öâÂ66T–BÂFWF–Ç3¢W6W$–BÒ“°¢Ğ¢66Rv¦–Âs¢°¢6öç7BGW&F–öâÒÆöö·4Æ–¶TGW&F–öâ†&w5³Ò’ò&w5³Ò¢VæFVf–æVC°¢6öç7BF&vWBÒv—BÖVÖ&W$g&öÕFö¶Vâ†ÖW76vRÂ&w5³Ò“°¢6öç7B&V6öâÒ&V6öäg&öÒ†&w2ÂGW&F–öâò"¢“°¢6öç7B&W7VÇBÒv—B¦–ÅW6W"€¢ÖöFW&F÷"À¢F&vWBÀ¢&V6öâÀ¢GW&F–öâÀ¢“°¢&WGW&âV&Æ–47F–öäVÖ&V@¡ì¥½¸°Ñ…É•ĞèÑ…É•Ğ¹ÕÍ•È°…Ñ¥½¸è€©…¥±•œ°É•…Í½¸°‘ÕÉ…Ñ¥½¸°…Í•%èÉ•ÍÕ±Ğ¹…Í•%ô¤ì(€€€ô(€€€…Í”€Õ¹©…¥°œèì(€€€€€½¹ÍĞÑ…É•Ğ€ô…İ…¥Ğµ•µ‰•ÉÉ½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÁt¤ì(€€€€€½¹ÍĞÉ•…Í½¸€ôÉ•…Í½¹É½´¡…ÉÌ°€Ä°€U¹©…¥°œ¤ì(€€€€€½¹ÍĞÉ•ÍÕ±Ğ€ô…İ…¥ĞÕ¹©…¥±UÍ•È (€€€€€€€µ½‘•É…Ñ½È¹Õ¥±°(€€€€€€€Ñ…É•Ğ°(€€€€€€€µ½‘•É…Ñ½È¹¥°(€€€€€€€É•…Í½¸°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸ÁÕ‰±¥Ñ¥½¹µ‰•¡ì¥½¸°Ñ…É•ĞèÑ…É•Ğ¹ÕÍ•È°…Ñ¥½¸è€Õ¹©…¥±•œ°É•…Í½¸°…Í•%èÉ•ÍÕ±Ğ¹…Í•%ô¤ì(€€€ô(€€€…Í”€©…¥±Í•ÑÕÀœèì(€€€€€½¹ÍĞÉ•ÍÕ±Ğ€ô…İ…¥ĞÍ•ÑÕÁ)…¥°¡µ½‘•É…Ñ½È°…İ…¥ĞÉ½±•É½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÁt¤°…İ…¥ĞÑ•áÑ¡…¹¹•±É½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÅt¤¤ì(€€€€€É•ÑÕÉ¸ÁÕ‰±¥Ñ¥½¹µ‰•¡ì(€€€€€€€¥½¸°(€€€€€€€…Ñ¥½¸è€½¹™¥ÕÉ•©…¥°œ°(€€€€€€€…Í•%èÉ•ÍÕ±Ğ¹…Í•%°(€€€€€€€‘•Ñ…¥±Ìè€‘íÉ•ÍÕ±Ğ¹ÕÁ‘…Ñ•‘¡…¹¹•±Íô¡…¹¹•±ÌÕÁ‘…Ñ•‘€°(€€€€€ô¤ì(€€€ô(€€€…Í”€µ½‘±½œœèì(€€€€€½¹ÍĞ¡…¹¹•°€ô…İ…¥ĞÑ•áÑ¡…¹¹•±É½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÁt¤ì(€€€€€½¹ÍĞ…Í•%€ô…İ…¥ĞÍ•Ñ5½‘1½¡…¹¹•°¡µ½‘•É…Ñ½È°¡…¹¹•°¤ì(€€€€€É•ÑÕÉ¸ÁÕ‰±¥Ñ¥½¹µ‰•¡ì¥½¸°…Ñ¥½¸è€Í•ĞÑ¡”µ½‘•É…Ñ¥½¸±½œ¡…¹¹•°œ°…Í•%°‘•Ñ…¥±Ìè€‘í¡…¹¹•±õ€ô¤ì(€€€ô(€€€…Í”€¹¥­¹…µ”œè(€€€…Í”€¹¥¬œèì(€€€€€½¹ÍĞÑ…É•Ğ€ô…İ…¥Ğµ•µ‰•ÉÉ½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÁt¤ì(€€€€€½¹ÍĞÉ…İ9¥­¹…µ”€ô…ÉÌ¹Í±¥” Ä¤¹©½¥¸ œ€œ¤¹ÑÉ¥´ ¤ì(€€€€€¥˜€ …É…İ9¥­¹…µ”¤Ñ¡É½Ü¹•ÜUÍ•É%¹ÁÕÑÉÉ½È UÍ…”è€±¹¥­¹…µ”ÕÍ•È¹•Ü¹¥­¹…µ”œ¤ì(€€€€€½¹ÍĞ¹¥­¹…µ”€ôÉ…İ9¥­¹…µ”¹Ñ½1½İ•É…Í” ¤€ôôô€É•Í•Ğœ€ü¹Õ±°€èÉ…İ9¥­¹…µ”ì(€€€€€½¹ÍĞ…Í•%€ô…İ…¥ĞÍ•Ñ9¥­¹…µ”¡µ½‘•É…Ñ½È°Ñ…É•Ğ°¹¥­¹…µ”°€9¥­¹…µ”½µµ…¹œ¤ì(€€€€€É•ÑÕÉ¸ÁÕ‰±¥Ñ¥½¹µ‰•¡ì(€€€€€€€¥½¸°(€€€€€€€Ñ…É•ĞèÑ…É•Ğ¹ÕÍ•È°(€€€€€€€…Ñ¥½¸è¹¥­¹…µ”€ü€¡…Ñ¡•¥È¹¥­¹…µ”¡…¹•œ€è€¡…Ñ¡•¥È¹¥­¹…µ”É•Í•Ğœ°(€€€€€€€…Í•%°(€€€€€€€‘•Ñ…¥±Ìè¹¥­¹…µ”€üü€I•Í•Ğœ°(€€€€€ô¤ì(€€€ô(€€€…Í”€…™¬œèì(€€€€€½¹ÍĞÉ•…Í½¸€ôÉ•…Í½¹É½´¡…ÉÌ°€À°€,œ¤ì(€€€€€…İ…¥ĞÍ•Ñ™¬¡µ½‘•É…Ñ½È°É•…Í½¸¤ì(€€€€€É•ÑÕÉ¸½µÁ…ÑMÑ…ÑÕÍµ‰•¡ƒ‹OŠ˜€‘íµ½‘•É…Ñ½Éôèe½ÔÉ”¹½Ü,İ¥Ñ Ñ¡”ÍÑ…ÑÕÌè€¨¨‘íÉ•…Í½¹ô¨©€¤ì(€€€ô(€€€…Í”€É½±•…‘œèì(€€€€€½¹ÍĞÑ…É•Ğ€ô…İ…¥Ğµ•µ‰•ÉÉ½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÁt¤ì(€€€€€½¹ÍĞÉ½±”€ô…İ…¥ĞÉ½±•É½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÅt¤ì(€€€€€½¹ÍĞÉ•…Í½¸€ôÉ•…Í½¹É½´¡…ÉÌ°€È°€9¼É•…Í½¸ÁÉ½Ù¥‘•œ¤ì(€€€€€½¹ÍĞ…Í•%€ô…İ…¥Ğ…‘‘I½±”¡µ½‘•É…Ñ½È°Ñ…É•Ğ°É½±”°É•…Í½¸¤ì(€€€€€É•ÑÕÉ¸ÁÕ‰±¥Ñ¥½¹µ‰•¡ì¥½¸°Ñ…É•ĞèÑ…É•Ğ¹ÕÍ•È°…Ñ¥½¸è€É••¥Ù•„É½±”œ°É•…Í½¸°…Í•%°‘•Ñ…¥±ÌèÉ½±”¹¹…µ”ô¤ì(€€€ô(€€€…Í”€É½±•É•µ½Ù”œèì(€€€€€½¹ÍĞÑ…É•Ğ€ô…İ…¥Ğµ•µ‰•ÉÉ½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÁt¤ì(€€€€€½¹ÍĞÉ½±”€ô…İ…¥ĞÉ½±•É½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÅt¤ì(€€€€€½¹ÍĞÉ•…Í½¸€ôÉ•…Í½¹É½´¡…ÉÌ°€È°€9¼É•…Í½¸ÁÉ½Ù¥‘•œ¤ì(€€€€€½¹ÍĞ…Í•%€ô…İ…¥ĞÉ•µ½Ù•I½±”¡µ½‘•É…Ñ½È°Ñ…É•Ğ°É½±”°É•…Í½¸¤ì(€€€€€É•ÑÕÉ¸ÁÕ‰±¥Ñ¥½¹µ‰•¡ì¥½¸°Ñ…É•ĞèÑ…É•Ğ¹ÕÍ•È°…Ñ¥½¸è€±½ÍĞ„É½±”œ°É•…Í½¸°…Í•%°‘•Ñ…¥±ÌèÉ½±”¹¹…µ”ô¤ì(€€€ô(€€€…Í”€Ñ•µÁÉ½±•…‘œèì(€€€€€¥˜€ ……ÉÍlÉt¤Ñ¡É½Ü¹•ÜUÍ•É%¹ÁÕÑÉÉ½È UÍ…”è€±Ñ•µÁÉ½±•…‘ÕÍ•ÈÉ½±”€İÉ•…Í½¸œ¤ì(€€€€€½¹ÍĞÑ…É•Ğ€ô…İ…¥Ğµ•µ‰•ÉÉ½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÁt¤ì(€€€€€½¹ÍĞÉ½±”€ô…İ…¥ĞÉ½±•É½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÅt¤ì(€€€€€½¹ÍĞÉ•…Í½¸€ôÉ•…Í½¹É½´¡…ÉÌ°€Ì°€9¼É•…Í½¸ÁÉ½Ù¥‘•œ¤ì(€€€€€½¹ÍĞ…Í•%€ô…İ…¥Ğ…‘‘Q•µÁI½±” (€€€€€€€µ½‘•É…Ñ½È°(€€€€€€€Ñ…É•Ğ°(€€€€€€€É½±”°(€€€€€€€…ÉÍlÉt°(€€€€€€€É•…Í½¸°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸ÁÕ‰±¥Ñ¥½¹µ‰•¡ì¥½¸°Ñ…É•ĞèÑ…É•Ğ¹ÕÍ•È°…Ñ¥½¸è€É••¥Ù•„Ñ•µÁ½É…ÉäÉ½±”œ°É•…Í½¸°‘ÕÉ…Ñ¥½¸è…ÉÍlÉt°…Í•%°‘•Ñ…¥±ÌèÉ½±”¹¹…µ”ô¤ì(€€€ô(€€€…Í”€ÁÕÉ”œèì(€€€€€½¹ÍĞ…µ½Õ¹Ğ€ô9Õµ‰•È¡…ÉÍlÁt¤ì(€€€€€¥˜€ …9Õµ‰•È¹¥Í%¹Ñ••È¡…µ½Õ¹Ğ¤¤Ñ¡É½Ü¹•ÜUÍ•É%¹ÁÕÑÉÉ½È UÍ…”è€±ÁÕÉ”€ÈÀmÕÍ•ÉtmÉ•…Í½¹tœ¤ì(€€€€€½¹ÍĞÁ½ÍÍ¥‰±•UÍ•È€ô…ÉÍlÅtü¹ÍÑ…ÉÑÍ]¥Ñ  œñ œ¤€üÍÑÉ¥Á5•¹Ñ¥½¸¡…ÉÍlÅt¤€èÕ¹‘•™¥¹•ì(€€€€€½¹ÍĞÉ•ÍÕ±Ğ€ô…İ…¥ĞÁÕÉ•5•ÍÍ…•Ì (€€€€€€€µ½‘•É…Ñ½È°(€€€€€€€ÕÉÉ•¹ÑQ•áÑ¡…¹¹•°¡µ•ÍÍ…”¤°(€€€€€€€…µ½Õ¹Ğ°(€€€€€€€É•…Í½¹É½´¡…ÉÌ°Á½ÍÍ¥‰±•UÍ•È€ü€È€è€Ä°€9¼É•…Í½¸ÁÉ½Ù¥‘•œ¤°(€€€€€€€Á½ÍÍ¥‰±•UÍ•È°(€€€€€€¤ì(€€€€€É•ÑÕÉ¸ÁÕ‰±¥Ñ¥½¹µ‰•¡ì¥½¸°…Ñ¥½¸è€ÁÕÉ•µ•ÍÍ…•Ìœ°…Í•%èÉ•ÍÕ±Ğ¹…Í•%°‘•Ñ…¥±Ìè€‘íÉ•ÍÕ±Ğ¹‘•±•Ñ•‘ôµ•ÍÍ…•Ì‘•±•Ñ•‘€ô¤ì(€€€ô(€€€…Í”€Í±½İµ½‘”œèì(€€€€€½¹ÍĞÍ•½¹‘Ì€ô9Õµ‰•È¡…ÉÍlÁt¤ì(€€€€€¥˜€ …9Õµ‰•È¹¥Í%¹Ñ••È¡Í•½¹‘Ì¤¤Ñ¡É½Ü¹•ÜUÍ•É%¹ÁÕÑÉÉ½È UÍ…”è€±Í±½İµ½‘”€ÔÉ•…Í½¸œ¤ì(€€€€€½¹ÍĞÉ•…Í½¸€ôÉ•…Í½¹É½´¡…ÉÌ°€Ä°€9¼É•…Í½¸ÁÉ½Ù¥‘•œ¤ì(€€€€€½¹ÍĞ…Í•%€ô…İ…¥ĞÍ•ÑM±½İµ½‘”¡µ½‘•É…Ñ½È°ÕÉÉ•¹ÑQ•áÑ¡…¹¹•°¡µ•ÍÍ…”¤°Í•½¹‘Ì°É•…Í½¸¤ì(€€€€€É•ÑÕÉ¸ÁÕ‰±¥Ñ¥½¹µ‰•¡ì¥½¸°…Ñ¥½¸è€ÕÁ‘…Ñ•Í±½İµ½‘”œ°É•…Í½¸°‘ÕÉ…Ñ¥½¸è€‘íÍ•½¹‘ÍõÍ€°…Í•%ô¤ì(€€€ô(€€€…Í”€±½¬œèì(€€€€€½¹ÍĞ¡…Í¡…¹¹•°€ô…ÉÍlÁtü¹ÍÑ…ÉÑÍ]¥Ñ  œğŒœ¤ì(€€€€€½¹ÍĞ¡…¹¹•°€ô¡…Í¡…¹¹•°€ü…İ…¥ĞÑ•áÑ¡…¹¹•±É½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÁt¤€èÕÉÉ•¹ÑQ•áÑ¡…¹¹•°¡µ•ÍÍ…”¤ì(€€€€€½¹ÍĞÉ•…Í½¸€ôÉ•…Í½¹É½´¡…ÉÌ°¡…Í¡…¹¹•°€ü€Ä€è€À°€9¼É•…Í½¸ÁÉ½Ù¥‘•œ¤ì(€€€€€½¹ÍĞ…Í•%€ô…İ…¥Ğ±½­¡…¹¹•°¡µ½‘•É…Ñ½È°¡…¹¹•°°É•…Í½¸¤ì(€€€€€É•ÑÕÉ¸ÁÕ‰±¥Ñ¥½¹µ‰•¡ì¥½¸°…Ñ¥½¸è€±½­•„¡…¹¹•°œ°É•…Í½¸°…Í•%°‘•Ñ…¥±Ìè€‘í¡…¹¹•±õ€ô¤ì(€€€ô(€€€…Í”€Õ¹±½¬œèì(€€€€€½¹ÍĞ¡…Í¡…¹¹•°€ô…ÉÍlÁtü¹ÍÑ…ÉÑÍ]¥Ñ  œğŒœ¤ì(€€€€€½¹ÍĞ¡…¹¹•°€ô¡…Í¡…¹¹•°€ü…İ…¥ĞÑ•áÑ¡…¹¹•±É½µQ½­•¸¡µ•ÍÍ…”°…ÉÍlÁt¤€èÕÉÉ•¹ÑQ•áÑ¡…¹¹•°¡µ•ÍÍ…”¤ì(€€€€€½¹ÍĞÉ•…Í½¸€ôÉ•…Í½¹É½´¡…ÉÌ°¡…Í¡…¹¹•°€ü€Ä€è€À°€9¼É•…Í½¸ÁÉ½Ù¥‘•œ¤ì(€€€€€½¹ÍĞ…Í•%€ô…İ…¥ĞÕ¹±½­¡…¹¹•°¡µ½‘•É…Ñ½È°¡…¹¹•°°É•…Í½¸¤ì(€€€€€É•ÑÕÉ¸ÁÕ‰±¥Ñ¥½¹µ‰•¡ì¥½¸°…Ñ¥½¸è€Õ¹±½­•„¡…¹¹•°œ°É•…Í½¸°…Í•%°‘•Ñ…¥±Ìè€‘í¡…¹¹•±õ€ô¤ì(€€€ô(€€€‘•™…Õ±Ğè(€€€€€Ñ¡É½Ü¹•ÜUÍ•É%¹ÁÕÑÉÉ½È¡U¹­¹½İ¸½µµ…¹¸UÍ”Í±…Í ½µµ…¹‘Ì½ÈÁÉ•™¥à½µµ…¹‘Ì±¥­”€±İ…É¸°€±µÕÑ”°€±­¥¬°€±‰…¸¹€¤ì(€ô)ô()•áÁ½ÉĞ…Íå¹Œ™Õ¹Ñ¥½¸¡…¹‘±•AÉ•™¥á½µµ…¹¡µ•ÍÍ…”è5•ÍÍ…”¤èAÉ½µ¥Í”ñ‰½½±•…¸øì(€¥˜€ …µ•ÍÍ…”¹Õ¥±ñğµ•ÍÍ…”¹…ÕÑ¡½È¹‰½Ğñğ€…µ•ÍÍ…”¹½¹Ñ•¹Ğ¹ÍÑ…ÉÑÍ]¥Ñ ¡AI%`¤¤É•ÑÕÉ¸™…±Í”ì(€½¹ÍĞmÉ…İ9…µ”°€¸¸¹…ÉÍt€ôÑ½­•¹¥é”¡µ•ÍÍ…”¹½¹Ñ•¹Ğ¹Í±¥”¡AI%`¹±•¹Ñ ¤¤ì(€¥˜€ …É…İ9…µ”¤É•ÑÕÉ¸™…±Í”ì(€½¹ÍĞ½µµ…¹‘9…µ”€ôÉ…İ9…µ”¹Ñ½1½İ•É…Í” ¤ì(€½¹ÍĞ¹½Éµ…±¥é•‘½µµ…¹‘9…µ”€ô¹½Éµ…±¥é•½µµ…¹‘9…µ”¡½µµ…¹‘9…µ”¤ì(€¥˜€ „¡…İ…¥Ğ¥Í½µµ…¹‘¹…‰±•¡µ•ÍÍ…”¹Õ¥±¹¥°¹½Éµ…±¥é•‘½µµ…¹‘9…µ”¤¤¤ì(€€€½¹ÍĞÉ•Á±ä€ô…İ…¥ĞÍ•¹‘AÉ•™¥áI•ÍÁ½¹Í”¡µ•ÍÍ…”°ì(€€€€€•µ‰•‘Ìèm•ÉÉ½ÉQ½µ‰•¡¹•ÜUÍ•É%¹ÁÕÑÉÉ½È Q¡¥Ì½µµ…¹¥ÌÕÉÉ•¹Ñ±ä‘¥Í…‰±•¸œ¤¥t°(€€€ô¤ì(€€€¥˜€¡É•Á±ä¤‘•±•Ñ•5•ÍÍ…•1…Ñ•È¡É•Á±ä¤ì(€€€É•ÑÕÉ¸ÑÉÕ”ì(€ô(€½¹ÍĞÍ¡½Õ±‘ÕÑ½•±•Ñ”€ô(€€€½µµ…¹‘9…µ”€„ôô€…™¬œ€˜˜(€€€½µµ…¹‘9…µ”€„ôô€İ…É¹Ìœ€˜˜(€€€½µµ…¹‘9…µ”€„ôô€…Í•Ìœ€˜˜(€€€½µµ…¹‘9…µ”€„ôô€±¥ÍÑ½µµ…¹‘Ìœ€˜˜(€€€½µµ…¹‘9…µ”€„ôô€Ìœì(€¥˜€¡Í¡½Õ±‘ÕÑ½•±•Ñ”¤‘•±•Ñ•5•ÍÍ…•1…Ñ•È¡µ•ÍÍ…”¤ì((€ÑÉäì(€€€½¹ÍĞ•µ‰•€ô…İ…¥Ğ•á•ÕÑ•AÉ•™¥á½µµ…¹¡µ•ÍÍ…”°½µµ…¹‘9…µ”°…ÉÌ¤ì(€€€¥˜€ …•µ‰•¤É•ÑÕÉ¸ÑÉÕ”ì(€€€½¹ÍĞÉ•Á±ä€ô…İ…¥ĞÍ•¹‘AÉ•™¥áI•ÍÁ½¹Í”¡µ•ÍÍ…”°ì•µ‰•‘Ìèm•µ‰•‘tô¤ì(€€€¥˜€¡É•Á±ä€˜˜Í¡½Õ±‘ÕÑ½•±•Ñ”¤‘•±•Ñ•5•ÍÍ…•1…Ñ•È¡É•Á±ä¤ì(€ô…Ñ €¡•ÉÉ½È¤ì(€€€½¹ÍĞÉ•Á±ä€ô…İ…¥ĞÍ•¹‘AÉ•™¥áI•ÍÁ½¹Í”¡µ•ÍÍ…”°ì•µ‰•‘Ìèm•ÉÉ½ÉQ½µ‰•¡•ÉÉ½¸¥tô¤ì(€€€¥˜€¡É•Á±ä€˜˜Í¡½Õ±‘ÕÑ½•±•Ñ”¤‘•±•Ñ•5•ÍÍ…•1…Ñ•È¡É•Á±ä¤ì(€ô((€É•ÑÕÉ¸ÑÉÕ”ì)ô(

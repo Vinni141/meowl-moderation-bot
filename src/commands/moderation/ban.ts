@@ -1,6 +1,5 @@
 import { SlashCommandBuilder } from 'discord.js';
-import { successEmbed } from '../../services/embedService.js';
-import { banUser } from '../../services/moderationService.js';
+import { createBanConfirmation } from '../../services/banConfirmationService.js';
 import type { SlashCommand } from '../../types/command.js';
 import { getTargetMember, requireGuildMember } from '../helpers.js';
 
@@ -12,13 +11,19 @@ export const banCommand: SlashCommand = {
     .addStringOption((option) => option.setName('reason').setDescription('Reason').setRequired(true).setMaxLength(512))
     .addIntegerOption((option) => option.setName('delete_messages_days').setDescription('0 to 7 days').setMinValue(0).setMaxValue(7)),
   async execute(interaction) {
-    const caseId = await banUser(
-      requireGuildMember(interaction),
-      await getTargetMember(interaction),
-      interaction.options.getString('reason', true),
-      interaction.options.getInteger('delete_messages_days') ?? 0,
-      interaction.channelId ?? undefined,
-    );
-    await interaction.reply({ embeds: [successEmbed('User Banned', `Case #${caseId}`)], ephemeral: true });
+    const moderator = requireGuildMember(interaction);
+    const target = await getTargetMember(interaction);
+    const reason = interaction.options.getString('reason', true);
+    const deleteMessageDays = interaction.options.getInteger('delete_messages_days') ?? 0;
+    await interaction.reply({
+      ...createBanConfirmation(
+        moderator,
+        target,
+        reason,
+        deleteMessageDays,
+        interaction.channelId ?? undefined,
+      ),
+      ephemeral: true,
+    });
   },
 };

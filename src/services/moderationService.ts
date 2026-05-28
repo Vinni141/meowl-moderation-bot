@@ -5,6 +5,7 @@ import { DISCORD_TIMEOUT_MAX_MS, parseDuration } from './durationService.js';
 import { dmModerationEmbed } from './embedService.js';
 import { logModerationAction } from './logService.js';
 import { enforceModerationSafety } from './safetyService.js';
+import { recordDeletedMessage } from './snipeService.js';
 import {
   ensureBotHasPermission,
   ensureModeratorHasPermission,
@@ -183,6 +184,10 @@ export async function purgeMessages(
 
   const fetched = await channel.messages.fetch({ limit: amount });
   const messages = userId ? fetched.filter((message) => message.author.id === userId) : fetched;
+  const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  for (const message of messages.values()) {
+    if (message.createdTimestamp > twoWeeksAgo) recordDeletedMessage(message);
+  }
   const deleted = await channel.bulkDelete(messages, true);
   const caseId = await logModerationAction({
     guild: moderator.guild,
