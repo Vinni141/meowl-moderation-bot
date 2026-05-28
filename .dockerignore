@@ -1,0 +1,13 @@
+.env
+.appdata
+.corepack
+dist
+node_modules
+prisma/dev.db
+*.db
+*.db-journal
+.git
+.gitignore
+Dockerfile
+README.md
+tests
