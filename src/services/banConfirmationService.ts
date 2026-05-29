@@ -24,6 +24,8 @@ type PendingBan = {
 const pendingBans = new Map<string, PendingBan>();
 const CONFIRMATION_TTL_MS = 60_000;
 
+type BanConfirmationPayload = Pick<MessageCreateOptions, 'embeds' | 'components'>;
+
 function createId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -46,7 +48,7 @@ export function createBanConfirmation(
   reason: string,
   deleteMessageDays: number,
   channelId?: string,
-): MessageCreateOptions {
+): BanConfirmationPayload {
   const id = createId();
   pendingBans.set(id, {
     moderatorId: moderator.id,
