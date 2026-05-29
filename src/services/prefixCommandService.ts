@@ -1,4 +1,4 @@
-﻿import {
+import {
   ChannelType,
   EmbedBuilder,
   PermissionFlagsBits,
@@ -81,11 +81,11 @@ function reasonFrom(args: string[], start: number, fallback = 'No reason provide
 }
 
 async function sendPrefixResponse(message: Message, options: MessageCreateOptions): Promise<Message | null> {
-  return message.reply(options).catch(() => message.channel.send(options).catch(() => null));
+  return message.reply(options).catch(() => currentTextChannel(message).send(options).catch(() => null));
 }
 
 function checkMarkIcon(message: Message): string {
-  return message.guild?.emojis.cache.find((emoji) => emoji.name === 'check_mark')?.toString() ?? 'âœ…';
+  return message.guild?.emojis.cache.find((emoji) => emoji.name === 'check_mark')?.toString() ?? '✅';
 }
 
 async function warningsEmbed(message: Message, moderator: GuildMember, target: GuildMember): Promise<EmbedBuilder> {
@@ -113,7 +113,7 @@ async function warningsEmbed(message: Message, moderator: GuildMember, target: G
     take: 10,
   });
 
-  const warningIcon = message.guild?.emojis.cache.find((emoji) => emoji.name === 'warning')?.toString() ?? 'âš ï¸';
+  const warningIcon = message.guild?.emojis.cache.find((emoji) => emoji.name === 'warning')?.toString() ?? '⚠️';
   const countLabel = `${warnings.length} warn${warnings.length === 1 ? '' : 's'} found`;
   const warningLines = warnings.length
     ? warnings
@@ -260,23 +260,13 @@ async function executePrefixCommand(message: Message, commandName: string, args:
       const duration = looksLikeDuration(args[1]) ? args[1] : undefined;
       const target = await memberFromToken(message, args[0]);
       const reason = reasonFrom(args, duration ? 2 : 1);
-      const result = await jailUser(
-        moderator,
-        target,
-        reason,
-        duration,
-      );
+      const result = await jailUser(moderator, target, reason, duration);
       return publicActionEmbed({ icon, target: target.user, action: 'jailed', reason, duration, caseId: result.caseId });
     }
     case 'unjail': {
       const target = await memberFromToken(message, args[0]);
       const reason = reasonFrom(args, 1, 'Unjail');
-      const result = await unjailUser(
-        moderator.guild,
-        target,
-        moderator.id,
-        reason,
-      );
+      const result = await unjailUser(moderator.guild, target, moderator.id, reason);
       return publicActionEmbed({ icon, target: target.user, action: 'unjailed', reason, caseId: result.caseId });
     }
     case 'jailsetup': {
@@ -311,7 +301,7 @@ async function executePrefixCommand(message: Message, commandName: string, args:
     case 'afk': {
       const reason = reasonFrom(args, 0, 'AFK');
       await setAfk(moderator, reason);
-      return compactStatusEmbed(`âœ… ${moderator}: You're now AFK with the status: **${reason}**`);
+      return compactStatusEmbed(`✅ ${moderator}: You're now AFK with the status: **${reason}**`);
     }
     case 'roleadd': {
       const target = await memberFromToken(message, args[0]);
@@ -332,13 +322,7 @@ async function executePrefixCommand(message: Message, commandName: string, args:
       const target = await memberFromToken(message, args[0]);
       const role = await roleFromToken(message, args[1]);
       const reason = reasonFrom(args, 3, 'No reason provided');
-      const caseId = await addTempRole(
-        moderator,
-        target,
-        role,
-        args[2],
-        reason,
-      );
+      const caseId = await addTempRole(moderator, target, role, args[2], reason);
       return publicActionEmbed({ icon, target: target.user, action: 'received a temporary role', reason, duration: args[2], caseId, details: role.name });
     }
     case 'purge': {
@@ -413,4 +397,3 @@ export async function handlePrefixCommand(message: Message): Promise<boolean> {
 
   return true;
 }
-
