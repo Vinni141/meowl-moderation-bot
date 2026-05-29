@@ -9,9 +9,9 @@ RUN apt-get update \
   && corepack prepare pnpm@9.15.4 --activate
 
 COPY package.json ./
+COPY prisma ./prisma
 RUN pnpm install --no-frozen-lockfile --prod=false
 
-COPY prisma ./prisma
 COPY tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
