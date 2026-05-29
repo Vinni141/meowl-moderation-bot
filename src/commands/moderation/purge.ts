@@ -19,6 +19,7 @@ export const purgeCommand: SlashCommand = {
       interaction.options.getString('reason') ?? undefined,
       interaction.options.getUser('user')?.id,
     );
-    await interaction.reply({ embeds: [successEmbed('Messages Deleted', `${result.deleted} messages deleted. Case #${result.caseId}`)], ephemeral: true });
+    const skipped = result.skippedOld ? ` ${result.skippedOld} older than 14 days were skipped.` : '';
+    await interaction.reply({ embeds: [successEmbed('Messages Deleted', `${result.deleted} messages deleted.${skipped} Case #${result.caseId}`)], ephemeral: true });
   },
 };
