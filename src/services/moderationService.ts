@@ -174,7 +174,7 @@ export async function purgeMessages(
   reason?: string,
   userId?: string,
   beforeMessageId?: string,
-): Promise<{ deleted: number; caseId: number }> {
+): Promise<{ deleted: number; skippedOld: number; caseId: number }> {
   ensureModeratorHasPermission(moderator, PermissionFlagsBits.ManageMessages);
   const bot = await moderator.guild.members.fetchMe();
   ensureBotHasPermission(bot, PermissionFlagsBits.ManageMessages);
@@ -207,22 +207,17 @@ export async function purgeMessages(
   }
 
   const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
-  const recentMessages = messages.filter((message) => message.createdTimestamp > twoWeeksAgo);
-  const olderMessages = messages.filter((message) => message.createdTimestamp <= twoWeeksAgo);
+  const deletableMessages = messages.filter((message) => message.createdTimestamp > twoWeeksAgo);
+  const skippedOld = messages.length - deletableMessages.length;
 
-  for (const message of messages) {
+  for (const message of deletableMessages) {
     recordDeletedMessage(message);
   }
 
   let deletedCount = 0;
-  if (recentMessages.length) {
-    const deleted = await channel.bulkDelete(recentMessages, true);
+  if (deletableMessages.length) {
+    const deleted = await channel.bulkDelete(deletableMessages, true);
     deletedCount += deleted.size;
-  }
-
-  for (const message of olderMessages) {
-    const deleted = await message.delete().then(() => true).catch(() => false);
-    if (deleted) deletedCount += 1;
   }
 
   const caseId = await logModerationAction({
@@ -231,9 +226,9 @@ export async function purgeMessages(
     moderatorId: moderator.id,
     reason,
     channelId: channel.id,
-    metadata: { requested: amount, deleted: deletedCount, userId },
+    metadata: { requested: amount, deleted: deletedCount, skippedOld, userId },
   });
   await enforceModerationSafety(moderator.guild, moderator.id, 'PURGE');
 
-  return { deleted: deletedCount, caseId };
+  return { deleted: deletedCount, skippedOld, caseId };
 }
