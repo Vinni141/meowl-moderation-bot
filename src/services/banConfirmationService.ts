@@ -5,7 +5,7 @@ import {
   EmbedBuilder,
   type ButtonInteraction,
   type GuildMember,
-  type InteractionReplyOptions,
+  type MessageCreateOptions,
   type MessageActionRowComponentBuilder,
 } from 'discord.js';
 import { UserInputError } from '../lib/errors.js';
@@ -46,7 +46,7 @@ export function createBanConfirmation(
   reason: string,
   deleteMessageDays: number,
   channelId?: string,
-): InteractionReplyOptions {
+): MessageCreateOptions {
   const id = createId();
   pendingBans.set(id, {
     moderatorId: moderator.id,
