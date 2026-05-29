@@ -1,7 +1,8 @@
+import type { Message, MessageCreateOptions } from 'discord.js';
 import 'discord.js';
 
 declare module 'discord.js' {
   interface PartialGroupDMChannel {
-    send(options: unknown): Promise<unknown>;
+    send(options: MessageCreateOptions): Promise<Message>;
   }
 }
