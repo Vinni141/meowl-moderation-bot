@@ -1,4 +1,4 @@
-import { PermissionFlagsBits, type Guild, type GuildMember, type TextBasedChannel } from 'discord.js';
+import { PermissionFlagsBits, type Guild, type GuildMember, type Message, type TextBasedChannel } from 'discord.js';
 import { prisma } from '../database/prisma.js';
 import { UserInputError } from '../lib/errors.js';
 import { DISCORD_TIMEOUT_MAX_MS, parseDuration } from './durationService.js';
@@ -173,6 +173,7 @@ export async function purgeMessages(
   amount: number,
   reason?: string,
   userId?: string,
+  beforeMessageId?: string,
 ): Promise<{ deleted: number; caseId: number }> {
   ensureModeratorHasPermission(moderator, PermissionFlagsBits.ManageMessages);
   const bot = await moderator.guild.members.fetchMe();
@@ -182,22 +183,57 @@ export async function purgeMessages(
   }
   if (amount < 1 || amount > 100) throw new UserInputError('amount must be between 1 and 100.');
 
-  const fetched = await channel.messages.fetch({ limit: amount });
-  const messages = userId ? fetched.filter((message) => message.author.id === userId) : fetched;
-  const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
-  for (const message of messages.values()) {
-    if (message.createdTimestamp > twoWeeksAgo) recordDeletedMessage(message);
+  const messages: Message[] = [];
+  let before = beforeMessageId;
+  let scanned = 0;
+
+  while (messages.length < amount && scanned < 500) {
+    const limit = Math.min(100, amount - messages.length + (userId ? 100 : 0));
+    const fetched = await channel.messages.fetch({ limit, before });
+    if (!fetched.size) break;
+
+    before = fetched.last()?.id;
+    scanned += fetched.size;
+
+    for (const message of fetched.values()) {
+      if (message.id === beforeMessageId) continue;
+      if (!beforeMessageId && message.author.id === moderator.id && message.content.toLowerCase().startsWith(',purge')) {
+        continue;
+      }
+      if (userId && message.author.id !== userId) continue;
+      messages.push(message);
+      if (messages.length >= amount) break;
+    }
   }
-  const deleted = await channel.bulkDelete(messages, true);
+
+  const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  const recentMessages = messages.filter((message) => message.createdTimestamp > twoWeeksAgo);
+  const olderMessages = messages.filter((message) => message.createdTimestamp <= twoWeeksAgo);
+
+  for (const message of messages) {
+    recordDeletedMessage(message);
+  }
+
+  let deletedCount = 0;
+  if (recentMessages.length) {
+    const deleted = await channel.bulkDelete(recentMessages, true);
+    deletedCount += deleted.size;
+  }
+
+  for (const message of olderMessages) {
+    const deleted = await message.delete().then(() => true).catch(() => false);
+    if (deleted) deletedCount += 1;
+  }
+
   const caseId = await logModerationAction({
     guild: moderator.guild,
     action: 'PURGE',
     moderatorId: moderator.id,
     reason,
     channelId: channel.id,
-    metadata: { requested: amount, deleted: deleted.size, userId },
+    metadata: { requested: amount, deleted: deletedCount, userId },
   });
   await enforceModerationSafety(moderator.guild, moderator.id, 'PURGE');
 
-  return { deleted: deleted.size, caseId };
+  return { deleted: deletedCount, caseId };
 }
