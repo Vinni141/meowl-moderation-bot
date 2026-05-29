@@ -258,21 +258,22 @@ function dashboardPage(): string {
         document.getElementById(key).textContent = data[key];
       }
       document.getElementById('updatedAt').textContent = 'Updated ' + new Date().toLocaleTimeString();
-      document.getElementById('commandGrid').innerHTML = data.commandStates.map((command) => `
-        <label class="toggleRow">
-          <span>,${escapeHtml(command.name)}</span>
-          <input type="checkbox" ${command.enabled ? 'checked' : ''} onchange="toggleCommand('${escapeHtml(command.name)}', this.checked)" />
-        </label>
-      `).join('');
-      document.getElementById('logs').innerHTML = data.recentLogs.map((log) => `
-        <tr>
-          <td>#${log.caseId}</td>
-          <td><span class="pill">${escapeHtml(log.action)}</span></td>
-          <td>${log.targetUserId ? '&lt;@' + log.targetUserId + '&gt;' : '-'}</td>
-          <td>${log.moderatorId ? '&lt;@' + log.moderatorId + '&gt;' : 'System'}</td>
-          <td>${escapeHtml(log.reason || '-')}</td>
-          <td>${new Date(log.createdAt).toLocaleString()}</td>
-        </tr>`).join('');
+      document.getElementById('commandGrid').innerHTML = data.commandStates.map((command) =>
+        '<label class="toggleRow">' +
+          '<span>,' + escapeHtml(command.name) + '</span>' +
+          '<input type="checkbox" ' + (command.enabled ? 'checked' : '') + ' onchange="toggleCommand(\\'' + escapeHtml(command.name) + '\\', this.checked)" />' +
+        '</label>'
+      ).join('');
+      document.getElementById('logs').innerHTML = data.recentLogs.map((log) =>
+        '<tr>' +
+          '<td>#' + log.caseId + '</td>' +
+          '<td><span class="pill">' + escapeHtml(log.action) + '</span></td>' +
+          '<td>' + (log.targetUserId ? '&lt;@' + log.targetUserId + '&gt;' : '-') + '</td>' +
+          '<td>' + (log.moderatorId ? '&lt;@' + log.moderatorId + '&gt;' : 'System') + '</td>' +
+          '<td>' + escapeHtml(log.reason || '-') + '</td>' +
+          '<td>' + new Date(log.createdAt).toLocaleString() + '</td>' +
+        '</tr>'
+      ).join('');
     }
     function escapeHtml(value) {
       return String(value).replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
