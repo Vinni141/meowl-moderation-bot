@@ -207,17 +207,25 @@ export async function purgeMessages(
   }
 
   const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
-  const deletableMessages = messages.filter((message) => message.createdTimestamp > twoWeeksAgo);
-  const skippedOld = messages.length - deletableMessages.length;
+  const recentMessages = messages.filter((message) => message.createdTimestamp > twoWeeksAgo);
+  const olderMessages = messages.filter((message) => message.createdTimestamp <= twoWeeksAgo);
 
-  for (const message of deletableMessages) {
+  for (const message of messages) {
     recordDeletedMessage(message);
   }
 
   let deletedCount = 0;
-  if (deletableMessages.length) {
-    const deleted = await channel.bulkDelete(deletableMessages, true);
+  if (recentMessages.length) {
+    const deleted = await channel.bulkDelete(recentMessages, true);
     deletedCount += deleted.size;
+  }
+
+  let skippedOld = 0;
+  if (olderMessages.length) {
+    const oldDeleteResults = await Promise.allSettled(olderMessages.map((message) => message.delete()));
+    const oldDeletedCount = oldDeleteResults.filter((result) => result.status === 'fulfilled').length;
+    deletedCount += oldDeletedCount;
+    skippedOld = olderMessages.length - oldDeletedCount;
   }
 
   const caseId = await logModerationAction({
