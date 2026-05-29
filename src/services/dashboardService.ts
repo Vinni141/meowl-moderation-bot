@@ -261,7 +261,7 @@ function dashboardPage(): string {
       document.getElementById('commandGrid').innerHTML = data.commandStates.map((command) =>
         '<label class="toggleRow">' +
           '<span>,' + escapeHtml(command.name) + '</span>' +
-          '<input type="checkbox" ' + (command.enabled ? 'checked' : '') + ' onchange="toggleCommand(\\'' + escapeHtml(command.name) + '\\', this.checked)" />' +
+          '<input type="checkbox" data-command="' + escapeHtml(command.name) + '" ' + (command.enabled ? 'checked' : '') + ' onchange="toggleCommand(this.dataset.command, this.checked)" />' +
         '</label>'
       ).join('');
       document.getElementById('logs').innerHTML = data.recentLogs.map((log) =>
