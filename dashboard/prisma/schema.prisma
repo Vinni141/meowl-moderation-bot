@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model GuildSettings {
+  id               String   @id @default(cuid())
+  guildId          String   @unique
+  modLogChannelId  String?
+  jailRoleId       String?
+  jailChannelId    String?
+  disabledCommands String   @default("[]")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model ModerationLog {
+  id           String   @id @default(cuid())
+  guildId      String
+  caseId       Int
+  action       String
+  targetUserId String?
+  moderatorId  String?
+  reason       String?
+  duration     String?
+  channelId    String?
+  metadata     String?
+  createdAt    DateTime @default(now())
+
+  @@unique([guildId, caseId])
+  @@index([guildId])
+}
+
+model Warning {
+  id          String   @id @default(cuid())
+  guildId     String
+  userId      String
+  moderatorId String
+  reason      String
+  expiresAt   DateTime @default(now())
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([guildId, userId, active])
+  @@index([expiresAt, active])
+}
+
+model Mute {
+  id          String   @id @default(cuid())
+  guildId     String
+  userId      String
+  moderatorId String
+  reason      String
+  expiresAt   DateTime
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([guildId, userId, active])
+  @@index([expiresAt, active])
+}
+
+model Jail {
+  id                    String    @id @default(cuid())
+  guildId               String
+  userId                String
+  moderatorId           String
+  reason                String
+  previousRoleIds       String
+  failedRemovedRoleIds  String?
+  failedRestoredRoleIds String?
+  jailRoleId            String
+  jailChannelId         String
+  expiresAt             DateTime?
+  active                Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  releasedAt            DateTime?
+  releasedBy            String?
+
+  @@index([guildId, userId, active])
+  @@index([expiresAt, active])
+}
+
+model TempRole {
+  id          String    @id @default(cuid())
+  guildId     String
+  userId      String
+  roleId      String
+  moderatorId String
+  reason      String?
+  expiresAt   DateTime
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  removedAt   DateTime?
+
+  @@index([guildId, userId, roleId, active])
+  @@index([expiresAt, active])
+}
+
+model AfkStatus {
+  id          String   @id @default(cuid())
+  guildId     String
+  userId      String
+  reason      String?
+  oldNickname String?
+  createdAt   DateTime @default(now())
+
+  @@unique([guildId, userId])
+}
