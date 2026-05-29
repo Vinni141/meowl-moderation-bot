@@ -7,7 +7,7 @@ const testDefaults =
         DISCORD_BOT_TOKEN: 'test-token',
         DISCORD_CLIENT_ID: 'test-client',
         DISCORD_GUILD_ID: 'test-guild',
-        DATABASE_URL: 'file:./test.db',
+        DATABASE_URL: 'postgresql://user:password@localhost:5432/test',
       }
     : {};
 
