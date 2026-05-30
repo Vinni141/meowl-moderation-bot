@@ -18,7 +18,7 @@ export async function GET(): Promise<NextResponse> {
     client_id: getRequiredEnv('DISCORD_CLIENT_ID'),
     redirect_uri: getRequiredEnv('DISCORD_REDIRECT_URI'),
     response_type: 'code',
-    scope: 'identify',
+    scope: 'identify guilds',
     state,
   });
 
