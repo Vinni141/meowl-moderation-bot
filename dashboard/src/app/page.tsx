@@ -119,7 +119,7 @@ export default async function DashboardPage({
   const envGuildId = getOptionalEnv('DISCORD_GUILD_ID');
   const defaultGuildId = session.guilds.find((guild) => guild.id === envGuildId)?.id ?? session.guilds[0]?.id;
   if (!defaultGuildId) redirect('/login?error=forbidden');
-  const guildId = session.guilds.some((guild) => guild.id === requestedGuildId)
+  const guildId = requestedGuildId && session.guilds.some((guild) => guild.id === requestedGuildId)
     ? requestedGuildId
     : defaultGuildId;
   const settings = await prisma.guildSettings.findUnique({ where: { guildId } });
