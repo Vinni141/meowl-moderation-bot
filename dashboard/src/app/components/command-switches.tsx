@@ -6,9 +6,10 @@ import type { ConfigurableCommand } from '../../lib/commands';
 type CommandSwitchesProps = {
   commands: readonly ConfigurableCommand[];
   disabledCommands: string[];
+  guildId: string;
 };
 
-export function CommandSwitches({ commands, disabledCommands }: CommandSwitchesProps) {
+export function CommandSwitches({ commands, disabledCommands, guildId }: CommandSwitchesProps) {
   const initialStates = useMemo(
     () => Object.fromEntries(commands.map((command) => [command, !disabledCommands.includes(command)])),
     [commands, disabledCommands],
@@ -26,7 +27,7 @@ export function CommandSwitches({ commands, disabledCommands }: CommandSwitchesP
     void fetch('/api/commands/toggle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command, enabled: nextValue }),
+      body: JSON.stringify({ command, enabled: nextValue, guildId }),
     })
       .then((response) => {
         if (!response.ok) {
