@@ -1,13 +1,22 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
-import { createSessionToken, setSessionCookie } from '../../../../../lib/auth';
-import { getAdminUserIds, getRequiredEnv } from '../../../../../lib/env';
+import { createSessionToken, type SessionGuild, setSessionCookie } from '../../../../../lib/auth';
+import { getAdminUserIds, getOptionalEnv, getRequiredEnv } from '../../../../../lib/env';
 
 type DiscordUser = {
   id: string;
   username: string;
   avatar: string | null;
 };
+
+type DiscordGuild = {
+  id: string;
+  name: string;
+  icon: string | null;
+  permissions?: string;
+};
+
+const adminPermission = 0x8n;
 
 async function exchangeCode(code: string): Promise<string> {
   const body = new URLSearchParams({
@@ -48,6 +57,42 @@ async function fetchDiscordUser(accessToken: string): Promise<DiscordUser> {
   return (await response.json()) as DiscordUser;
 }
 
+async function fetchUserGuilds(accessToken: string): Promise<DiscordGuild[]> {
+  const response = await fetch('https://discord.com/api/users/@me/guilds', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    throw new Error('Discord guild lookup failed.');
+  }
+
+  return (await response.json()) as DiscordGuild[];
+}
+
+async function fetchBotGuildIds(): Promise<Set<string> | null> {
+  const rawToken = getOptionalEnv('DISCORD_BOT_TOKEN') ?? getOptionalEnv('DISCORD_TOKEN');
+  if (!rawToken) return null;
+  const authorization = rawToken.startsWith('Bot ') ? rawToken : `Bot ${rawToken}`;
+
+  const response = await fetch('https://discord.com/api/users/@me/guilds', {
+    headers: { Authorization: authorization },
+  });
+
+  if (!response.ok) return null;
+
+  const guilds = (await response.json()) as Array<{ id: string }>;
+  return new Set(guilds.map((guild) => guild.id));
+}
+
+function hasAdministratorPermission(guild: DiscordGuild): boolean {
+  if (!guild.permissions) return false;
+  return (BigInt(guild.permissions) & adminPermission) === adminPermission;
+}
+
+function guildIconUrl(guild: DiscordGuild): string | null {
+  return guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=64` : null;
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const url = new URL(request.url);
   const code = url.searchParams.get('code');
@@ -63,9 +108,33 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     const accessToken = await exchangeCode(code);
-    const user = await fetchDiscordUser(accessToken);
+    const [user, userGuilds, botGuildIds] = await Promise.all([
+      fetchDiscordUser(accessToken),
+      fetchUserGuilds(accessToken),
+      fetchBotGuildIds(),
+    ]);
 
-    if (!getAdminUserIds().has(user.id)) {
+    const adminUserIds = getAdminUserIds();
+    const configuredGuildId = getOptionalEnv('DISCORD_GUILD_ID');
+    const accessibleGuilds: SessionGuild[] = userGuilds
+      .filter((guild) => hasAdministratorPermission(guild))
+      .filter((guild) => !botGuildIds || botGuildIds.has(guild.id))
+      .map((guild) => ({
+        id: guild.id,
+        name: guild.name,
+        icon: guildIconUrl(guild),
+      }))
+      .slice(0, 50);
+
+    if (adminUserIds.has(user.id) && configuredGuildId && !accessibleGuilds.some((guild) => guild.id === configuredGuildId)) {
+      accessibleGuilds.unshift({
+        id: configuredGuildId,
+        name: 'Configured Server',
+        icon: null,
+      });
+    }
+
+    if (accessibleGuilds.length === 0) {
       return NextResponse.redirect(new URL('/login?error=forbidden', request.url));
     }
 
@@ -73,7 +142,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`
       : null;
 
-    await setSessionCookie(createSessionToken({ userId: user.id, username: user.username, avatar }));
+    await setSessionCookie(createSessionToken({ userId: user.id, username: user.username, avatar, guilds: accessibleGuilds }));
     return NextResponse.redirect(new URL('/', request.url));
   } catch {
     return NextResponse.redirect(new URL('/login?error=discord', request.url));
