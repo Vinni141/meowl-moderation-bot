@@ -117,6 +117,7 @@ a {
 
 .topbar,
 .panel-heading,
+.topbar-actions,
 .session-card,
 .command-row,
 .log-row {
@@ -128,6 +129,11 @@ a {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 24px;
+}
+
+.topbar-actions {
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 .eyebrow {
@@ -142,6 +148,27 @@ a {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(29, 31, 39, 0.76);
+}
+
+.server-select {
+  display: grid;
+  gap: 4px;
+}
+
+.server-select span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.server-select select {
+  min-height: 38px;
+  min-width: 220px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(29, 31, 39, 0.9);
+  color: var(--text);
+  font: inherit;
+  padding: 0 10px;
 }
 
 .session-card img,
@@ -291,6 +318,7 @@ a {
 
 @media (max-width: 760px) {
   .topbar,
+  .topbar-actions,
   .session-card {
     align-items: flex-start;
   }
@@ -303,6 +331,16 @@ a {
 
   .topbar {
     flex-direction: column;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .server-select,
+  .server-select select {
+    width: 100%;
   }
 
   .session-card {
