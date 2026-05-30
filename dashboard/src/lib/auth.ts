@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { getAdminUserIds, getRequiredEnv } from './env';
+import { getRequiredEnv } from './env';
 
 const sessionCookieName = 'meowl_session';
 
@@ -9,7 +9,14 @@ type SessionPayload = {
   userId: string;
   username: string;
   avatar: string | null;
+  guilds: SessionGuild[];
   expiresAt: number;
+};
+
+export type SessionGuild = {
+  id: string;
+  name: string;
+  icon: string | null;
 };
 
 function base64Url(input: string): string {
@@ -40,7 +47,7 @@ export function readSessionToken(token: string | undefined): SessionPayload | nu
   try {
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as SessionPayload;
     if (payload.expiresAt < Date.now()) return null;
-    if (!getAdminUserIds().has(payload.userId)) return null;
+    if (!Array.isArray(payload.guilds) || payload.guilds.length === 0) return null;
     return payload;
   } catch {
     return null;
@@ -55,6 +62,12 @@ export async function getSession(): Promise<SessionPayload | null> {
 export async function requireSession(): Promise<SessionPayload> {
   const session = await getSession();
   if (!session) redirect('/login');
+  return session;
+}
+
+export async function requireGuildAccess(guildId: string): Promise<SessionPayload> {
+  const session = await requireSession();
+  if (!session.guilds.some((guild) => guild.id === guildId)) redirect('/login?error=forbidden');
   return session;
 }
 
