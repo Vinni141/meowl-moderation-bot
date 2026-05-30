@@ -85,14 +85,11 @@ a {
 
 .primary-button,
 .ghost-button,
-.toggle-on,
-.toggle-off {
+.switch {
   display: inline-flex;
-  min-height: 38px;
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
   cursor: pointer;
   text-decoration: none;
 }
@@ -159,7 +156,9 @@ a {
 }
 
 .ghost-button {
+  min-height: 38px;
   padding: 0 12px;
+  border-radius: 6px;
   border: 1px solid var(--line);
   background: transparent;
   color: var(--text);
@@ -180,6 +179,12 @@ a {
   display: block;
   margin-top: 8px;
   font-size: 30px;
+}
+
+.stat-card-loading strong,
+.log-row-loading strong,
+.log-row-loading span {
+  color: var(--muted);
 }
 
 .panel {
@@ -215,20 +220,55 @@ a {
   gap: 4px;
 }
 
-.toggle-on,
-.toggle-off {
-  min-width: 58px;
-  padding: 0 14px;
-  color: #101116;
-  font-weight: 800;
+.switch {
+  width: 52px;
+  height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
 }
 
-.toggle-on {
+.switch:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.switch-track {
+  position: relative;
+  width: 48px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #3a3f4f;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  transition: transform 140ms ease;
+}
+
+.switch[data-state='on'] .switch-track {
+  border-color: rgba(65, 211, 126, 0.7);
   background: var(--green);
 }
 
-.toggle-off {
-  background: var(--red);
+.switch[data-state='on'] .switch-thumb {
+  transform: translateX(20px);
+  background: #101116;
+}
+
+.switch[data-pending='true'] .switch-track {
+  filter: saturate(0.7);
 }
 
 .log-list {
