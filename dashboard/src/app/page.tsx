@@ -1,9 +1,11 @@
 import { Suspense } from 'react';
+import { redirect } from 'next/navigation';
 import { requireSession } from '../lib/auth';
 import { configurableCommands, parseDisabledCommands } from '../lib/commands';
-import { getRequiredEnv } from '../lib/env';
+import { getOptionalEnv } from '../lib/env';
 import { prisma } from '../lib/prisma';
 import { CommandSwitches } from './components/command-switches';
+import { ServerSelector } from './components/server-selector';
 
 export const dynamic = 'force-dynamic';
 
@@ -106,9 +108,20 @@ function LogsSkeleton() {
   );
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ guildId?: string | string[] }>;
+}) {
   const session = await requireSession();
-  const guildId = getRequiredEnv('DISCORD_GUILD_ID');
+  const params = await searchParams;
+  const requestedGuildId = Array.isArray(params?.guildId) ? params?.guildId[0] : params?.guildId;
+  const envGuildId = getOptionalEnv('DISCORD_GUILD_ID');
+  const defaultGuildId = session.guilds.find((guild) => guild.id === envGuildId)?.id ?? session.guilds[0]?.id;
+  if (!defaultGuildId) redirect('/login?error=forbidden');
+  const guildId = session.guilds.some((guild) => guild.id === requestedGuildId)
+    ? requestedGuildId
+    : defaultGuildId;
   const settings = await prisma.guildSettings.findUnique({ where: { guildId } });
   const disabledCommands = parseDisabledCommands(settings?.disabledCommands);
 
@@ -119,14 +132,17 @@ export default async function DashboardPage() {
           <p className="eyebrow">Meowl Moderation</p>
           <h1>Dashboard</h1>
         </div>
-        <div className="session-card">
-          {session.avatar ? <img src={session.avatar} alt="" /> : <div className="avatar-fallback" />}
-          <span>{session.username}</span>
-          <form action="/api/auth/logout" method="post">
-            <button className="ghost-button" type="submit">
-              Logout
-            </button>
-          </form>
+        <div className="topbar-actions">
+          <ServerSelector guilds={session.guilds} selectedGuildId={guildId} />
+          <div className="session-card">
+            {session.avatar ? <img src={session.avatar} alt="" /> : <div className="avatar-fallback" />}
+            <span>{session.username}</span>
+            <form action="/api/auth/logout" method="post">
+              <button className="ghost-button" type="submit">
+                Logout
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 
@@ -141,7 +157,7 @@ export default async function DashboardPage() {
             <p>Changes are stored in Supabase and picked up by the bot immediately.</p>
           </div>
         </div>
-        <CommandSwitches commands={configurableCommands} disabledCommands={disabledCommands} />
+        <CommandSwitches commands={configurableCommands} disabledCommands={disabledCommands} guildId={guildId} />
       </section>
 
       <Suspense fallback={<LogsSkeleton />}>
