@@ -25,6 +25,7 @@ import { ensureModeratorHasPermission } from './permissionService.js';
 import { setNickname } from './nicknameService.js';
 import { getCommandStates, isCommandEnabled, normalizeCommandName } from './commandSettingsService.js';
 import { buildSnipeEmbed } from './snipeService.js';
+import { createRemoveWarningComponents } from './warningRemovalService.js';
 
 export const PREFIX = ',';
 
@@ -81,14 +82,16 @@ function reasonFrom(args: string[], start: number, fallback = 'No reason provide
 }
 
 async function sendPrefixResponse(message: Message, options: MessageCreateOptions): Promise<Message | null> {
-  return message.reply(options).catch(() => currentTextChannel(message).send(options).catch(() => null));
+  return message.reply(options).catch(() => {
+    return currentTextChannel(message).send(options).catch(() => null);
+  });
 }
 
 function checkMarkIcon(message: Message): string {
   return message.guild?.emojis.cache.find((emoji) => emoji.name === 'check_mark')?.toString() ?? '✅';
 }
 
-async function warningsEmbed(message: Message, moderator: GuildMember, target: GuildMember): Promise<EmbedBuilder> {
+async function warningsEmbed(message: Message, moderator: GuildMember, target: GuildMember): Promise<MessageCreateOptions> {
   ensureModeratorHasPermission(moderator, PermissionFlagsBits.ModerateMembers);
   const now = new Date();
 
@@ -124,13 +127,18 @@ async function warningsEmbed(message: Message, moderator: GuildMember, target: G
         .join('\n')
     : '> No active warnings.';
 
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(0xf59e0b)
     .setAuthor({
       name: `@${target.user.username}`,
       iconURL: target.user.displayAvatarURL(),
     })
     .setDescription(`${warningIcon} **${countLabel}**\n\n${warningLines}`);
+
+  return {
+    embeds: [embed],
+    components: createRemoveWarningComponents(target.id, warnings.length === 0),
+  };
 }
 
 async function casesEmbed(moderator: GuildMember, target: GuildMember): Promise<EmbedBuilder> {
@@ -212,7 +220,8 @@ async function executePrefixCommand(message: Message, commandName: string, args:
       return publicActionEmbed({ icon, target: target.user, action: 'warned', reason, duration: '30 days', caseId });
     }
     case 'warns': {
-      return warningsEmbed(message, moderator, await memberFromToken(message, args[0]));
+      await sendPrefixResponse(message, await warningsEmbed(message, moderator, await memberFromToken(message, args[0])));
+      return null;
     }
     case 'cases': {
       return casesEmbed(moderator, await memberFromToken(message, args[0]));
@@ -260,13 +269,23 @@ async function executePrefixCommand(message: Message, commandName: string, args:
       const duration = looksLikeDuration(args[1]) ? args[1] : undefined;
       const target = await memberFromToken(message, args[0]);
       const reason = reasonFrom(args, duration ? 2 : 1);
-      const result = await jailUser(moderator, target, reason, duration);
+      const result = await jailUser(
+        moderator,
+        target,
+        reason,
+        duration,
+      );
       return publicActionEmbed({ icon, target: target.user, action: 'jailed', reason, duration, caseId: result.caseId });
     }
     case 'unjail': {
       const target = await memberFromToken(message, args[0]);
       const reason = reasonFrom(args, 1, 'Unjail');
-      const result = await unjailUser(moderator.guild, target, moderator.id, reason);
+      const result = await unjailUser(
+        moderator.guild,
+        target,
+        moderator.id,
+        reason,
+      );
       return publicActionEmbed({ icon, target: target.user, action: 'unjailed', reason, caseId: result.caseId });
     }
     case 'jailsetup': {
@@ -322,7 +341,13 @@ async function executePrefixCommand(message: Message, commandName: string, args:
       const target = await memberFromToken(message, args[0]);
       const role = await roleFromToken(message, args[1]);
       const reason = reasonFrom(args, 3, 'No reason provided');
-      const caseId = await addTempRole(moderator, target, role, args[2], reason);
+      const caseId = await addTempRole(
+        moderator,
+        target,
+        role,
+        args[2],
+        reason,
+      );
       return publicActionEmbed({ icon, target: target.user, action: 'received a temporary role', reason, duration: args[2], caseId, details: role.name });
     }
     case 'purge': {
@@ -335,8 +360,10 @@ async function executePrefixCommand(message: Message, commandName: string, args:
         amount,
         reasonFrom(args, possibleUser ? 2 : 1, 'No reason provided'),
         possibleUser,
+        message.id,
       );
-      return publicActionEmbed({ icon, action: 'purged messages', caseId: result.caseId, details: `${result.deleted} messages deleted` });
+      const skipped = result.skippedOld ? ` (${result.skippedOld} older than 14 days skipped)` : '';
+      return publicActionEmbed({ icon, action: 'purged messages', caseId: result.caseId, details: `${result.deleted} messages deleted${skipped}` });
     }
     case 'slowmode': {
       const seconds = Number(args[0]);
