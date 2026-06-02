@@ -2,6 +2,7 @@ import type { Message } from 'discord.js';
 import { deleteMessageLater } from '../lib/deleteMessageLater.js';
 import { clearAfk, formatAfkDuration, getAfk } from '../services/afkService.js';
 import { compactStatusEmbed } from '../services/embedService.js';
+import { serverEmoji } from '../services/emojiService.js';
 import { handlePrefixCommand } from '../services/prefixCommandService.js';
 
 export async function handleMessageCreate(message: Message): Promise<void> {
@@ -16,7 +17,7 @@ export async function handleMessageCreate(message: Message): Promise<void> {
         .reply({
           embeds: [
             compactStatusEmbed(
-              `👋 ${member}: Welcome back, you were away for **${formatAfkDuration(cleared.createdAt)}**`,
+              `${serverEmoji(message.guild, 'check')} ${member}: Welcome back, you were away for **${formatAfkDuration(cleared.createdAt)}**`,
             ),
           ],
         })
@@ -33,7 +34,7 @@ export async function handleMessageCreate(message: Message): Promise<void> {
         .reply({
           embeds: [
             compactStatusEmbed(
-              `💤 <@${user.id}> is AFK: **${afk.reason ?? 'AFK'}** - ${formatAfkDuration(afk.createdAt)} ago`,
+              `${serverEmoji(message.guild, 'questionMark')} <@${user.id}> is AFK: **${afk.reason ?? 'AFK'}** - ${formatAfkDuration(afk.createdAt)} ago`,
             ),
           ],
         })
