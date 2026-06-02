@@ -26,6 +26,7 @@ import { setNickname } from './nicknameService.js';
 import { getCommandStates, isCommandEnabled, normalizeCommandName } from './commandSettingsService.js';
 import { buildSnipeEmbed } from './snipeService.js';
 import { createRemoveWarningComponents } from './warningRemovalService.js';
+import { serverEmoji } from './emojiService.js';
 
 export const PREFIX = ',';
 
@@ -88,7 +89,7 @@ async function sendPrefixResponse(message: Message, options: MessageCreateOption
 }
 
 function checkMarkIcon(message: Message): string {
-  return message.guild?.emojis.cache.find((emoji) => emoji.name === 'check_mark')?.toString() ?? '✅';
+  return serverEmoji(message.guild, 'check');
 }
 
 async function warningsEmbed(message: Message, moderator: GuildMember, target: GuildMember): Promise<MessageCreateOptions> {
@@ -116,7 +117,7 @@ async function warningsEmbed(message: Message, moderator: GuildMember, target: G
     take: 10,
   });
 
-  const warningIcon = message.guild?.emojis.cache.find((emoji) => emoji.name === 'warning')?.toString() ?? '⚠️';
+  const warningIcon = serverEmoji(message.guild, 'warn');
   const countLabel = `${warnings.length} warn${warnings.length === 1 ? '' : 's'} found`;
   const warningLines = warnings.length
     ? warnings
@@ -320,7 +321,7 @@ async function executePrefixCommand(message: Message, commandName: string, args:
     case 'afk': {
       const reason = reasonFrom(args, 0, 'AFK');
       await setAfk(moderator, reason);
-      return compactStatusEmbed(`✅ ${moderator}: You're now AFK with the status: **${reason}**`);
+      return compactStatusEmbed(`${serverEmoji(message.guild, 'check')} ${moderator}: You're now AFK with the status: **${reason}**`);
     }
     case 'roleadd': {
       const target = await memberFromToken(message, args[0]);
