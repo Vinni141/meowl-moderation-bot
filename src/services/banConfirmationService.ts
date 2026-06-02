@@ -10,6 +10,7 @@ import {
 } from 'discord.js';
 import { UserInputError } from '../lib/errors.js';
 import { publicActionEmbed } from './embedService.js';
+import { serverEmoji } from './emojiService.js';
 import { banUser } from './moderationService.js';
 
 type PendingBan = {
@@ -31,9 +32,10 @@ function createId(): string {
 }
 
 export function banConfirmationEmbed(target: GuildMember, reason: string): EmbedBuilder {
+  const warningIcon = serverEmoji(target.guild, 'warn');
   return new EmbedBuilder()
     .setColor(0xf59e0b)
-    .setTitle('Confirm Ban')
+    .setTitle(`${warningIcon} Confirm Ban`)
     .setDescription(`Are you sure you want to ban **${target.user.username}**?`)
     .addFields(
       { name: 'User', value: `${target} (${target.id})`, inline: false },
@@ -87,7 +89,7 @@ export async function handleBanConfirmation(interaction: ButtonInteraction): Pro
       embeds: [
         new EmbedBuilder()
           .setColor(0xdc2626)
-          .setTitle('Ban Cancelled')
+          .setTitle(`${serverEmoji(interaction.guild, 'cross')} Ban Cancelled`)
           .setDescription('This ban confirmation expired.'),
       ],
       components: [],
@@ -106,7 +108,7 @@ export async function handleBanConfirmation(interaction: ButtonInteraction): Pro
       embeds: [
         new EmbedBuilder()
           .setColor(0x6b7280)
-          .setTitle('Ban Cancelled')
+          .setTitle(`${serverEmoji(interaction.guild, 'cross')} Ban Cancelled`)
           .setDescription('The user was not banned.'),
       ],
       components: [],
@@ -130,6 +132,7 @@ export async function handleBanConfirmation(interaction: ButtonInteraction): Pro
   await interaction.update({
     embeds: [
       publicActionEmbed({
+        icon: serverEmoji(interaction.guild, 'check'),
         target: target.user,
         action: 'banned',
         reason: pending.reason,
