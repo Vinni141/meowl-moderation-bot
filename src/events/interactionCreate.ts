@@ -3,11 +3,27 @@ import { commandMap } from '../commands/index.js';
 import { errorToEmbed, UserInputError } from '../lib/errors.js';
 import { handleBanConfirmation } from '../services/banConfirmationService.js';
 import { isCommandEnabled } from '../services/commandSettingsService.js';
+import { handleWarningRemovalButton, handleWarningRemovalSelect } from '../services/warningRemovalService.js';
 
 export async function handleInteractionCreate(interaction: Interaction): Promise<void> {
   if (interaction.isButton()) {
     try {
       if (await handleBanConfirmation(interaction)) return;
+      if (await handleWarningRemovalButton(interaction)) return;
+    } catch (error) {
+      const payload = { embeds: [errorToEmbed(error)], ephemeral: true };
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp(payload).catch(() => null);
+      } else {
+        await interaction.reply(payload).catch(() => null);
+      }
+      return;
+    }
+  }
+
+  if (interaction.isStringSelectMenu()) {
+    try {
+      if (await handleWarningRemovalSelect(interaction)) return;
     } catch (error) {
       const payload = { embeds: [errorToEmbed(error)], ephemeral: true };
       if (interaction.deferred || interaction.replied) {
