@@ -13,6 +13,7 @@ import { prisma } from '../database/prisma.js';
 import { UserInputError } from '../lib/errors.js';
 import { logModerationAction } from './logService.js';
 import { ensureModeratorHasPermission } from './permissionService.js';
+import { serverEmoji } from './emojiService.js';
 
 const removeWarnButtonPrefix = 'warn_remove';
 const removeWarnSelectPrefix = 'warn_remove_select';
@@ -57,7 +58,7 @@ export async function handleWarningRemovalButton(interaction: ButtonInteraction)
       embeds: [
         new EmbedBuilder()
           .setColor(0x6b7280)
-          .setTitle('No Warnings')
+          .setTitle(`${serverEmoji(interaction.guild, 'warn')} No Warnings`)
           .setDescription('This user has no active warnings to remove.'),
       ],
       ephemeral: true,
@@ -82,7 +83,7 @@ export async function handleWarningRemovalButton(interaction: ButtonInteraction)
     embeds: [
       new EmbedBuilder()
         .setColor(0xf59e0b)
-        .setTitle('Remove Warn')
+        .setTitle(`${serverEmoji(interaction.guild, 'warn')} Remove Warn`)
         .setDescription(`Choose which warning to remove from <@${targetUserId}>.`),
     ],
     components: [row],
@@ -116,7 +117,7 @@ export async function handleWarningRemovalSelect(interaction: StringSelectMenuIn
       embeds: [
         new EmbedBuilder()
           .setColor(0x6b7280)
-          .setTitle('Already Removed')
+          .setTitle(`${serverEmoji(interaction.guild, 'cross')} Already Removed`)
           .setDescription('That warning is no longer active.'),
       ],
       components: [],
@@ -138,7 +139,7 @@ export async function handleWarningRemovalSelect(interaction: StringSelectMenuIn
     embeds: [
       new EmbedBuilder()
         .setColor(0x41d37e)
-        .setTitle('Warning Removed')
+        .setTitle(`${serverEmoji(interaction.guild, 'check')} Warning Removed`)
         .setDescription(`Removed a warning from <@${targetUserId}>. Case #${caseId}`),
     ],
     components: [],
