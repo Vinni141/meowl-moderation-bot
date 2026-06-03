@@ -89,6 +89,51 @@ export async function muteUser(
   return caseId;
 }
 
+export async function unmuteUser(
+  moderator: GuildMember,
+  target: GuildMember,
+  reason: string,
+  channelId?: string,
+): Promise<number> {
+  ensureModeratorHasPermission(moderator, PermissionFlagsBits.ModerateMembers);
+  const bot = await target.guild.members.fetchMe();
+  ensureBotHasPermission(bot, PermissionFlagsBits.ModerateMembers);
+  ensureTargetManageable(moderator, bot, target, bot.id);
+
+  const activeMute = await prisma.mute.findFirst({
+    where: {
+      guildId: target.guild.id,
+      userId: target.id,
+      active: true,
+    },
+  });
+  if (!target.communicationDisabledUntilTimestamp && !activeMute) {
+    throw new UserInputError('That user is not muted.');
+  }
+
+  await target.timeout(null, reason);
+  await prisma.mute.updateMany({
+    where: {
+      guildId: target.guild.id,
+      userId: target.id,
+      active: true,
+    },
+    data: { active: false },
+  });
+  await target
+    .send({ embeds: [dmModerationEmbed('You got unmuted', reason, target.guild)] })
+    .catch(() => null);
+
+  return logModerationAction({
+    guild: target.guild,
+    action: 'UNMUTE',
+    targetUserId: target.id,
+    moderatorId: moderator.id,
+    reason,
+    channelId,
+  });
+}
+
 export async function kickUser(
   moderator: GuildMember,
   target: GuildMember,
