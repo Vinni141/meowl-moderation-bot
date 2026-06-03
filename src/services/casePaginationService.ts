@@ -50,6 +50,8 @@ function clampPage(page: number, totalPages: number): number {
 }
 
 function createCasesComponents(targetUserId: string, page: number, totalPages: number) {
+  if (totalPages <= 1) return [];
+
   const previousPage = Math.max(page - 1, 0);
   const nextPage = Math.min(page + 1, Math.max(totalPages - 1, 0));
 
