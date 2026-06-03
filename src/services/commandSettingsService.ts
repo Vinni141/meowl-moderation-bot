@@ -6,6 +6,7 @@ export const configurableCommands = [
   'cases',
   'listcommands',
   'mute',
+  'unmute',
   'kick',
   'ban',
   'unban',
