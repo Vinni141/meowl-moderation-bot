@@ -2,6 +2,7 @@ import type { Interaction } from 'discord.js';
 import { commandMap } from '../commands/index.js';
 import { errorToEmbed, UserInputError } from '../lib/errors.js';
 import { handleBanConfirmation } from '../services/banConfirmationService.js';
+import { handleCasesPaginationButton } from '../services/casePaginationService.js';
 import { isCommandEnabled } from '../services/commandSettingsService.js';
 import { handleWarningRemovalButton, handleWarningRemovalSelect } from '../services/warningRemovalService.js';
 
@@ -9,6 +10,7 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
   if (interaction.isButton()) {
     try {
       if (await handleBanConfirmation(interaction)) return;
+      if (await handleCasesPaginationButton(interaction)) return;
       if (await handleWarningRemovalButton(interaction)) return;
     } catch (error) {
       const payload = { embeds: [errorToEmbed(error)], ephemeral: true };
