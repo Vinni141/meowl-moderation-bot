@@ -16,7 +16,7 @@ import { errorToEmbed, UserInputError } from '../lib/errors.js';
 import { lockChannel, setSlowmode, unlockChannel } from './channelService.js';
 import { compactStatusEmbed, publicActionEmbed } from './embedService.js';
 import { jailUser, setupJail, unjailUser } from './jailService.js';
-import { kickUser, muteUser, purgeMessages, unbanUser, warnUser } from './moderationService.js';
+import { kickUser, muteUser, purgeMessages, unbanUser, unmuteUser, warnUser } from './moderationService.js';
 import { addRole, removeRole } from './roleService.js';
 import { setAfk } from './afkService.js';
 import { addTempRole } from './tempRoleService.js';
@@ -53,9 +53,29 @@ async function memberFromToken(message: Message, token: string | undefined): Pro
 async function roleFromToken(message: Message, token: string | undefined): Promise<Role> {
   if (!message.guild || !token) throw new UserInputError('Please mention a role.');
   const id = stripMention(token);
-  const role = await message.guild.roles.fetch(id).catch(() => null);
+  const roles = await message.guild.roles.fetch();
+  const role =
+    roles.get(id) ??
+    roles.find((candidate) => candidate.name.toLowerCase() === token.toLowerCase());
   if (!role) throw new UserInputError('That role was not found.');
   return role;
+}
+
+async function roleFromArgs(message: Message, args: string[], startIndex: number): Promise<{ role: Role; nextIndex: number }> {
+  if (!message.guild || !args[startIndex]) throw new UserInputError('Please mention a role or write its name.');
+  const roles = await message.guild.roles.fetch();
+  const firstToken = args[startIndex];
+  const firstId = stripMention(firstToken);
+  const mentionedOrIdRole = roles.get(firstId);
+  if (mentionedOrIdRole) return { role: mentionedOrIdRole, nextIndex: startIndex + 1 };
+
+  for (let endIndex = args.length; endIndex > startIndex; endIndex -= 1) {
+    const candidateName = args.slice(startIndex, endIndex).join(' ').toLowerCase();
+    const role = roles.find((candidate) => candidate.name.toLowerCase() === candidateName);
+    if (role) return { role, nextIndex: endIndex };
+  }
+
+  throw new UserInputError('That role was not found.');
 }
 
 async function textChannelFromToken(message: Message, token: string | undefined): Promise<TextChannel> {
@@ -189,7 +209,7 @@ async function listCommandsEmbed(message: Message): Promise<EmbedBuilder> {
   const mark = (name: string) => (enabledByName.get(name) === false ? 'disabled' : 'enabled');
 
   const groups: Array<[string, string[]]> = [
-    ['Moderation', ['warn', 'warns', 'cases', 'mute', 'kick', 'ban', 'unban', 'purge', 's']],
+    ['Moderation', ['warn', 'warns', 'cases', 'mute', 'unmute', 'kick', 'ban', 'unban', 'purge', 's']],
     ['Jail', ['jailsetup', 'jail', 'unjail']],
     ['Roles', ['roleadd', 'roleremove', 'temproleadd']],
     ['Channel Tools', ['slowmode', 'lock', 'unlock']],
@@ -240,6 +260,12 @@ async function executePrefixCommand(message: Message, commandName: string, args:
       const reason = reasonFrom(args, 2);
       const caseId = await muteUser(moderator, target, args[1], reason, message.channel.id);
       return publicActionEmbed({ icon, target: target.user, action: 'muted', reason, duration: args[1], caseId });
+    }
+    case 'unmute': {
+      const target = await memberFromToken(message, args[0]);
+      const reason = reasonFrom(args, 1, 'Unmute');
+      const caseId = await unmuteUser(moderator, target, reason, message.channel.id);
+      return publicActionEmbed({ icon, target: target.user, action: 'unmuted', reason, caseId });
     }
     case 'kick': {
       const target = await memberFromToken(message, args[0]);
@@ -325,31 +351,33 @@ async function executePrefixCommand(message: Message, commandName: string, args:
     }
     case 'roleadd': {
       const target = await memberFromToken(message, args[0]);
-      const role = await roleFromToken(message, args[1]);
-      const reason = reasonFrom(args, 2, 'No reason provided');
+      const { role, nextIndex } = await roleFromArgs(message, args, 1);
+      const reason = reasonFrom(args, nextIndex, 'No reason provided');
       const caseId = await addRole(moderator, target, role, reason);
       return publicActionEmbed({ icon, target: target.user, action: 'received a role', reason, caseId, details: role.name });
     }
     case 'roleremove': {
       const target = await memberFromToken(message, args[0]);
-      const role = await roleFromToken(message, args[1]);
-      const reason = reasonFrom(args, 2, 'No reason provided');
+      const { role, nextIndex } = await roleFromArgs(message, args, 1);
+      const reason = reasonFrom(args, nextIndex, 'No reason provided');
       const caseId = await removeRole(moderator, target, role, reason);
       return publicActionEmbed({ icon, target: target.user, action: 'lost a role', reason, caseId, details: role.name });
     }
     case 'temproleadd': {
       if (!args[2]) throw new UserInputError('Usage: ,temproleadd @user @role 7d reason');
       const target = await memberFromToken(message, args[0]);
-      const role = await roleFromToken(message, args[1]);
-      const reason = reasonFrom(args, 3, 'No reason provided');
+      const { role, nextIndex } = await roleFromArgs(message, args, 1);
+      const duration = args[nextIndex];
+      if (!duration) throw new UserInputError('Usage: ,temproleadd @user role 7d reason');
+      const reason = reasonFrom(args, nextIndex + 1, 'No reason provided');
       const caseId = await addTempRole(
         moderator,
         target,
         role,
-        args[2],
+        duration,
         reason,
       );
-      return publicActionEmbed({ icon, target: target.user, action: 'received a temporary role', reason, duration: args[2], caseId, details: role.name });
+      return publicActionEmbed({ icon, target: target.user, action: 'received a temporary role', reason, duration, caseId, details: role.name });
     }
     case 'purge': {
       const amount = Number(args[0]);
