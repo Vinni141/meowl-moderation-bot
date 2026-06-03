@@ -27,6 +27,7 @@ import { getCommandStates, isCommandEnabled, normalizeCommandName } from './comm
 import { buildSnipeEmbed } from './snipeService.js';
 import { createRemoveWarningComponents } from './warningRemovalService.js';
 import { serverEmoji } from './emojiService.js';
+import { buildCasesPage } from './casePaginationService.js';
 
 export const PREFIX = ',';
 
@@ -162,46 +163,6 @@ async function warningsEmbed(message: Message, moderator: GuildMember, target: G
   };
 }
 
-async function casesEmbed(moderator: GuildMember, target: GuildMember): Promise<EmbedBuilder> {
-  ensureModeratorHasPermission(moderator, PermissionFlagsBits.ModerateMembers);
-  const totalCases = await prisma.moderationLog.count({
-    where: {
-      guildId: target.guild.id,
-      OR: [{ targetUserId: target.id }, { moderatorId: target.id }],
-    },
-  });
-  const logs = await prisma.moderationLog.findMany({
-    where: {
-      guildId: target.guild.id,
-      OR: [{ targetUserId: target.id }, { moderatorId: target.id }],
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 15,
-  });
-
-  const lines = logs.length
-    ? logs
-        .map((log) => {
-          const direction = log.targetUserId === target.id ? 'received' : 'performed';
-          const otherUserId = log.targetUserId === target.id ? log.moderatorId : log.targetUserId;
-          const otherUser = otherUserId ? `<@${otherUserId}>` : 'System';
-          const date = `<t:${Math.floor(log.createdAt.getTime() / 1000)}:R>`;
-          const reason = log.reason ? `\n> ${log.reason}` : '';
-          return `> **#${log.caseId} ${log.action}** ${direction} ${date}\n> ${direction === 'received' ? 'Moderator' : 'Target'}: ${otherUser}${reason}`;
-        })
-        .join('\n\n')
-    : '> No moderation cases found.';
-
-  return new EmbedBuilder()
-    .setColor(0x38bdf8)
-    .setAuthor({
-      name: `@${target.user.username}`,
-      iconURL: target.user.displayAvatarURL(),
-    })
-    .setTitle('Moderation Cases')
-    .setDescription(`**${totalCases} total case${totalCases === 1 ? '' : 's'}**\n\n${lines}`);
-}
-
 async function listCommandsEmbed(message: Message): Promise<EmbedBuilder> {
   if (!message.guild) throw new UserInputError('This command can only be used in a server.');
   const states = await getCommandStates(message.guild.id);
@@ -245,7 +206,8 @@ async function executePrefixCommand(message: Message, commandName: string, args:
       return null;
     }
     case 'cases': {
-      return casesEmbed(moderator, await memberFromToken(message, args[0]));
+      await sendPrefixResponse(message, await buildCasesPage(moderator, await memberFromToken(message, args[0])));
+      return null;
     }
     case 'listcommands': {
       return listCommandsEmbed(message);
