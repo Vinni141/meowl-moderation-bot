@@ -232,8 +232,8 @@ export async function purgeMessages(
   let before = beforeMessageId;
   let scanned = 0;
 
-  while (messages.length < amount && scanned < 500) {
-    const limit = Math.min(100, amount - messages.length + (userId ? 100 : 0));
+  while (messages.length < amount && scanned < (userId ? 500 : amount)) {
+    const limit = userId ? 100 : amount;
     const fetched = await channel.messages.fetch({ limit, before });
     if (!fetched.size) break;
 
@@ -249,13 +249,15 @@ export async function purgeMessages(
       messages.push(message);
       if (messages.length >= amount) break;
     }
+
+    if (!userId) break;
   }
 
   const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
   const recentMessages = messages.filter((message) => message.createdTimestamp > twoWeeksAgo);
   const olderMessages = messages.filter((message) => message.createdTimestamp <= twoWeeksAgo);
 
-  for (const message of messages) {
+  for (const message of recentMessages) {
     recordDeletedMessage(message);
   }
 
@@ -265,23 +267,19 @@ export async function purgeMessages(
     deletedCount += deleted.size;
   }
 
-  let skippedOld = 0;
-  if (olderMessages.length) {
-    const oldDeleteResults = await Promise.allSettled(olderMessages.map((message) => message.delete()));
-    const oldDeletedCount = oldDeleteResults.filter((result) => result.status === 'fulfilled').length;
-    deletedCount += oldDeletedCount;
-    skippedOld = olderMessages.length - oldDeletedCount;
-  }
+  const skippedOld = olderMessages.length;
 
-  const caseId = await logModerationAction({
-    guild: moderator.guild,
-    action: 'PURGE',
-    moderatorId: moderator.id,
-    reason,
-    channelId: channel.id,
-    metadata: { requested: amount, deleted: deletedCount, skippedOld, userId },
-  });
-  await enforceModerationSafety(moderator.guild, moderator.id, 'PURGE');
+  const [caseId] = await Promise.all([
+    logModerationAction({
+      guild: moderator.guild,
+      action: 'PURGE',
+      moderatorId: moderator.id,
+      reason,
+      channelId: channel.id,
+      metadata: { requested: amount, deleted: deletedCount, skippedOld, userId },
+    }),
+    enforceModerationSafety(moderator.guild, moderator.id, 'PURGE'),
+  ]);
 
   return { deleted: deletedCount, skippedOld, caseId };
 }
