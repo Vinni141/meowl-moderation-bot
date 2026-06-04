@@ -28,6 +28,8 @@ const envSchema = z.object({
   DUCKDNS_TOKEN: z.string().optional().default(''),
   STATUS_ROLE_ID: z.string().optional().default('1455595430040834263'),
   STATUS_ROLE_PHRASE: z.string().optional().default('.gg/thebrainrothub'),
+  SERVER_TAG_ROLE_ID: z.string().optional().default('1512124895113253086'),
+  SERVER_TAG_GUILD_ID: z.string().optional().default(''),
 });
 
 export const config = envSchema.parse({ ...testDefaults, ...process.env });
