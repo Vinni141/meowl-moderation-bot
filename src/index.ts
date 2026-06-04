@@ -7,6 +7,7 @@ import { handleMessageCreate } from './events/messageCreate.js';
 import { handleMessageDelete } from './events/messageDelete.js';
 import { handleReady } from './events/ready.js';
 import { handleGuildBanAdd } from './events/guildBanAdd.js';
+import { handlePresenceUpdate } from './events/presenceUpdate.js';
 
 const client = new Client({
   intents: [
@@ -14,6 +15,7 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildModeration,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildPresences,
     GatewayIntentBits.MessageContent,
   ],
   partials: [Partials.Channel, Partials.Message],
@@ -24,6 +26,7 @@ client.on('interactionCreate', (interaction) => void handleInteractionCreate(int
 client.on('messageCreate', (message) => void handleMessageCreate(message));
 client.on('messageDelete', (message) => void handleMessageDelete(message));
 client.on('guildBanAdd', (ban) => void handleGuildBanAdd(ban));
+client.on('presenceUpdate', (oldPresence, newPresence) => void handlePresenceUpdate(oldPresence, newPresence));
 client.on('error', (error) => console.error('Discord client error', error));
 client.on('shardError', (error) => console.error('Discord shard error', error));
 
