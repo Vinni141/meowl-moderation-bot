@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  PermissionFlagsBits,
   type ButtonInteraction,
   type GuildMember,
   type MessageCreateOptions,
@@ -12,6 +13,7 @@ import { UserInputError } from '../lib/errors.js';
 import { publicActionEmbed } from './embedService.js';
 import { serverEmoji } from './emojiService.js';
 import { banUser } from './moderationService.js';
+import { ensureModeratorHasPermission } from './permissionService.js';
 
 type PendingBan = {
   moderatorId: string;
@@ -51,6 +53,8 @@ export function createBanConfirmation(
   deleteMessageDays: number,
   channelId?: string,
 ): BanConfirmationPayload {
+  ensureModeratorHasPermission(moderator, PermissionFlagsBits.BanMembers);
+
   const id = createId();
   pendingBans.set(id, {
     moderatorId: moderator.id,
