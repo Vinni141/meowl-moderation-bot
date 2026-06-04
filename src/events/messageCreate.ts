@@ -4,6 +4,7 @@ import { clearAfk, formatAfkDuration, getAfk } from '../services/afkService.js';
 import { compactStatusEmbed } from '../services/embedService.js';
 import { serverEmoji } from '../services/emojiService.js';
 import { handlePrefixCommand } from '../services/prefixCommandService.js';
+import { applyServerTagRoleToMember } from '../services/statusRoleService.js';
 
 export async function handleMessageCreate(message: Message): Promise<void> {
   if (!message.guild || message.author.bot) return;
@@ -11,6 +12,7 @@ export async function handleMessageCreate(message: Message): Promise<void> {
 
   const member = message.member;
   if (member) {
+    await applyServerTagRoleToMember(member);
     const cleared = await clearAfk(member);
     if (cleared) {
       const reply = await message
