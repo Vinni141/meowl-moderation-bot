@@ -26,6 +26,8 @@ const envSchema = z.object({
   DASHBOARD_ADMIN_TOKEN: z.preprocess((value) => (value === '' ? undefined : value), z.string().optional()),
   DUCKDNS_DOMAIN: z.string().optional().default(''),
   DUCKDNS_TOKEN: z.string().optional().default(''),
+  STATUS_ROLE_ID: z.string().optional().default('1455595430040834263'),
+  STATUS_ROLE_PHRASE: z.string().optional().default('.gg/thebrainrothub'),
 });
 
 export const config = envSchema.parse({ ...testDefaults, ...process.env });
