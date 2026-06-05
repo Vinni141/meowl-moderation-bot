@@ -30,6 +30,7 @@ import { serverEmoji } from './emojiService.js';
 import { buildCasesPage } from './casePaginationService.js';
 
 export const PREFIX = ',';
+const PREFIXES = [PREFIX, '?'];
 
 function tokenize(input: string): string[] {
   return input.trim().split(/\s+/).filter(Boolean);
@@ -104,8 +105,12 @@ function reasonFrom(args: string[], start: number, fallback = 'No reason provide
 }
 
 async function sendPrefixResponse(message: Message, options: MessageCreateOptions): Promise<Message | null> {
-  return message.reply(options).catch(() => {
-    return currentTextChannel(message).send(options).catch(() => null);
+  return message.reply(options).catch((replyError) => {
+    console.error('Failed to reply to prefix command:', replyError);
+    return currentTextChannel(message).send(options).catch((sendError) => {
+      console.error('Failed to send prefix command response:', sendError);
+      return null;
+    });
   });
 }
 
@@ -236,6 +241,7 @@ async function executePrefixCommand(message: Message, commandName: string, args:
       return publicActionEmbed({ icon, target: target.user, action: 'kicked', reason, caseId });
     }
     case 'ban': {
+      ensureModeratorHasPermission(moderator, PermissionFlagsBits.BanMembers);
       const maybeDays = Number(args[1]);
       const hasDays = Number.isInteger(maybeDays) && args[1] !== undefined;
       const target = await memberFromToken(message, args[0]);
@@ -323,7 +329,7 @@ async function executePrefixCommand(message: Message, commandName: string, args:
       const { role, nextIndex } = await roleFromArgs(message, args, 1);
       const reason = reasonFrom(args, nextIndex, 'No reason provided');
       const caseId = await removeRole(moderator, target, role, reason);
-      return publicActionEmbed({ icon, target: target.user, action: 'lost a role', reason, caseId, details: role.name });
+      return publicActionEmbed({ icon, target: target.user, action: 'lost a role', reason, caseId });
     }
     case 'temproleadd': {
       if (!args[2]) throw new UserInputError('Usage: ,temproleadd @user @role 7d reason');
@@ -383,8 +389,9 @@ async function executePrefixCommand(message: Message, commandName: string, args:
 }
 
 export async function handlePrefixCommand(message: Message): Promise<boolean> {
-  if (!message.guild || message.author.bot || !message.content.startsWith(PREFIX)) return false;
-  const [rawName, ...args] = tokenize(message.content.slice(PREFIX.length));
+  const prefix = PREFIXES.find((candidate) => message.content.startsWith(candidate));
+  if (!message.guild || message.author.bot || !prefix) return false;
+  const [rawName, ...args] = tokenize(message.content.slice(prefix.length));
   if (!rawName) return false;
   const commandName = rawName.toLowerCase();
   const normalizedCommandName = normalizeCommandName(commandName);
