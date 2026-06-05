@@ -30,7 +30,6 @@ import { serverEmoji } from './emojiService.js';
 import { buildCasesPage } from './casePaginationService.js';
 
 export const PREFIX = ',';
-const PREFIXES = [PREFIX, '?'];
 
 function tokenize(input: string): string[] {
   return input.trim().split(/\s+/).filter(Boolean);
@@ -329,7 +328,7 @@ async function executePrefixCommand(message: Message, commandName: string, args:
       const { role, nextIndex } = await roleFromArgs(message, args, 1);
       const reason = reasonFrom(args, nextIndex, 'No reason provided');
       const caseId = await removeRole(moderator, target, role, reason);
-      return publicActionEmbed({ icon, target: target.user, action: 'lost a role', reason, caseId });
+      return publicActionEmbed({ icon, target: target.user, action: 'lost a role', reason, caseId, details: role.name });
     }
     case 'temproleadd': {
       if (!args[2]) throw new UserInputError('Usage: ,temproleadd @user @role 7d reason');
@@ -389,9 +388,8 @@ async function executePrefixCommand(message: Message, commandName: string, args:
 }
 
 export async function handlePrefixCommand(message: Message): Promise<boolean> {
-  const prefix = PREFIXES.find((candidate) => message.content.startsWith(candidate));
-  if (!message.guild || message.author.bot || !prefix) return false;
-  const [rawName, ...args] = tokenize(message.content.slice(prefix.length));
+  if (!message.guild || message.author.bot || !message.content.startsWith(PREFIX)) return false;
+  const [rawName, ...args] = tokenize(message.content.slice(PREFIX.length));
   if (!rawName) return false;
   const commandName = rawName.toLowerCase();
   const normalizedCommandName = normalizeCommandName(commandName);
