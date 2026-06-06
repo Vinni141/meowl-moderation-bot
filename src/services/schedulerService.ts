@@ -3,7 +3,11 @@ import { prisma } from '../database/prisma.js';
 import { dmModerationEmbed } from './embedService.js';
 import { unjailUser } from './jailService.js';
 import { logModerationAction } from './logService.js';
+import { DISCORD_TIMEOUT_MAX_MS } from './durationService.js';
+import { PERMANENT_MUTE_EXPIRES_AT } from './moderationService.js';
 import { expireTempRole } from './tempRoleService.js';
+
+const permanentMuteRefreshThresholdMs = 24 * 60 * 60 * 1000;
 
 export async function processExpiredItems(client: Client): Promise<void> {
   const now = new Date();
@@ -37,6 +41,23 @@ export async function processExpiredItems(client: Client): Promise<void> {
         action: 'MUTE_EXPIRED',
         targetUserId: mute.userId,
         reason: 'Mute duration expired',
+      });
+    }
+  }
+
+  const permanentMutes = await prisma.mute.findMany({
+    where: { active: true, expiresAt: PERMANENT_MUTE_EXPIRES_AT },
+  });
+  for (const mute of permanentMutes) {
+    const guild = await client.guilds.fetch(mute.guildId).catch(() => null);
+    const member = guild ? await guild.members.fetch(mute.userId).catch(() => null) : null;
+    if (!member) continue;
+
+    const timeoutUntil = member.communicationDisabledUntilTimestamp ?? 0;
+    const shouldRefresh = timeoutUntil - now.getTime() <= permanentMuteRefreshThresholdMs;
+    if (shouldRefresh) {
+      await member.timeout(DISCORD_TIMEOUT_MAX_MS, mute.reason).catch((error) => {
+        console.error('Failed to refresh permanent mute timeout:', error);
       });
     }
   }
