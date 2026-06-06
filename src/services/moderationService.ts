@@ -13,6 +13,8 @@ import {
 } from './permissionService.js';
 
 export const WARNING_EXPIRES_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+export const PERMANENT_MUTE_EXPIRES_AT = new Date('9999-12-31T23:59:59.999Z');
+export const PERMANENT_MUTE_DURATION_LABEL = 'Permanent';
 
 export function getWarningExpiresAt(now = new Date()): Date {
   return new Date(now.getTime() + WARNING_EXPIRES_AFTER_MS);
@@ -53,7 +55,7 @@ export async function warnUser(
 export async function muteUser(
   moderator: GuildMember,
   target: GuildMember,
-  durationInput: string,
+  durationInput: string | undefined,
   reason: string,
   channelId?: string,
 ): Promise<number> {
@@ -61,7 +63,13 @@ export async function muteUser(
   const bot = await target.guild.members.fetchMe();
   ensureBotHasPermission(bot, PermissionFlagsBits.ModerateMembers);
   ensureTargetManageable(moderator, bot, target, bot.id);
-  const duration = parseDuration(durationInput, DISCORD_TIMEOUT_MAX_MS);
+  const duration = durationInput
+    ? parseDuration(durationInput, DISCORD_TIMEOUT_MAX_MS)
+    : {
+        input: PERMANENT_MUTE_DURATION_LABEL,
+        milliseconds: DISCORD_TIMEOUT_MAX_MS,
+        expiresAt: PERMANENT_MUTE_EXPIRES_AT,
+      };
 
   await target.timeout(duration.milliseconds, reason);
   await prisma.mute.create({
