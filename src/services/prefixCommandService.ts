@@ -43,12 +43,43 @@ function looksLikeDuration(value: string | undefined): boolean {
   return Boolean(value && /^\d+[smhd]$/i.test(value));
 }
 
+function looksLikeUserReference(value: string | undefined): boolean {
+  if (!value) return false;
+  return /^<@!?\d+>$/.test(value) || /^\d{17,20}$/.test(value);
+}
+
 async function memberFromToken(message: Message, token: string | undefined): Promise<GuildMember> {
   if (!message.guild || !token) throw new UserInputError('Please mention a user.');
   const id = stripMention(token);
   const member = await message.guild.members.fetch(id).catch(() => null);
   if (!member) throw new UserInputError('That user is not a server member.');
   return member;
+}
+
+async function memberFromReply(message: Message): Promise<GuildMember> {
+  if (!message.guild || !message.reference?.messageId) throw new UserInputError('Please mention a user or reply to a message.');
+  const repliedMessage = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+  const authorId = repliedMessage?.author.id;
+  if (!authorId) throw new UserInputError('Could not find the replied user.');
+  const member = await message.guild.members.fetch(authorId).catch(() => null);
+  if (!member) throw new UserInputError('That user is not a server member.');
+  return member;
+}
+
+async function parseMuteTargetAndArgs(
+  message: Message,
+  args: string[],
+): Promise<{ target: GuildMember; duration: string | undefined; reasonStart: number }> {
+  const hasExplicitTarget = looksLikeUserReference(args[0]);
+  const target = hasExplicitTarget ? await memberFromToken(message, args[0]) : await memberFromReply(message);
+  const durationIndex = hasExplicitTarget ? 1 : 0;
+  const duration = looksLikeDuration(args[durationIndex]) ? args[durationIndex] : undefined;
+
+  return {
+    target,
+    duration,
+    reasonStart: duration ? durationIndex + 1 : durationIndex,
+  };
 }
 
 async function roleFromToken(message: Message, token: string | undefined): Promise<Role> {
@@ -221,11 +252,10 @@ async function executePrefixCommand(message: Message, commandName: string, args:
       return buildSnipeEmbed(message, amount).embeds[0] ?? null;
     }
     case 'mute': {
-      if (!args[1]) throw new UserInputError('Usage: ,mute @user 10m reason');
-      const target = await memberFromToken(message, args[0]);
-      const reason = reasonFrom(args, 2);
-      const caseId = await muteUser(moderator, target, args[1], reason, message.channel.id);
-      return publicActionEmbed({ icon, target: target.user, action: 'muted', reason, duration: args[1], caseId });
+      const { target, duration, reasonStart } = await parseMuteTargetAndArgs(message, args);
+      const reason = reasonFrom(args, reasonStart);
+      const caseId = await muteUser(moderator, target, duration, reason, message.channel.id);
+      return publicActionEmbed({ icon, target: target.user, action: 'muted', reason, duration: duration ?? 'Permanent', caseId });
     }
     case 'unmute': {
       const target = await memberFromToken(message, args[0]);
