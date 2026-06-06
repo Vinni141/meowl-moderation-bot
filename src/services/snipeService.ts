@@ -1,6 +1,5 @@
-import { EmbedBuilder, PermissionFlagsBits, type Message } from 'discord.js';
+import { EmbedBuilder, type Message } from 'discord.js';
 import { UserInputError } from '../lib/errors.js';
-import { ensureModeratorHasPermission } from './permissionService.js';
 
 type SnipedMessage = {
   authorId: string;
@@ -45,7 +44,6 @@ export function recordDeletedMessage(message: Message): void {
 
 export function buildSnipeEmbed(message: Message, amount = 1): { embeds: EmbedBuilder[] } {
   if (!message.guild || !message.member) throw new UserInputError('This command can only be used in a server.');
-  ensureModeratorHasPermission(message.member, PermissionFlagsBits.ManageMessages);
   if (!Number.isInteger(amount) || amount < 1) throw new UserInputError('Usage: ,s or ,s 2');
 
   const requestedAmount = Math.min(amount, MAX_SNIPES_PER_COMMAND);
