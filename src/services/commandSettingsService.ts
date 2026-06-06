@@ -17,6 +17,7 @@ export const configurableCommands = [
   'roleadd',
   'roleremove',
   'temproleadd',
+  'inrole',
   'purge',
   's',
   'slowmode',
