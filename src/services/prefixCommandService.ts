@@ -148,6 +148,42 @@ function checkMarkIcon(message: Message): string {
   return serverEmoji(message.guild, 'check');
 }
 
+const INROLE_MEMBERS_PER_PAGE = 40;
+const INROLE_MAX_PAGES = 10;
+
+function chunkLines(lines: string[], pageSize: number): string[][] {
+  const pages: string[][] = [];
+  for (let index = 0; index < lines.length; index += pageSize) {
+    pages.push(lines.slice(index, index + pageSize));
+  }
+  return pages;
+}
+
+async function inRoleEmbeds(message: Message, role: Role): Promise<EmbedBuilder[]> {
+  if (!message.guild) throw new UserInputError('This command can only be used in a server.');
+
+  const members = await message.guild.members.fetch();
+  const matchingMembers = [...members.values()]
+    .filter((member) => member.roles.cache.has(role.id))
+    .sort((left, right) => left.displayName.localeCompare(right.displayName));
+
+  const allLines = matchingMembers.map((member, index) => `${index + 1}. ${member} (${member.user.tag})`);
+  const visibleLines = allLines.slice(0, INROLE_MEMBERS_PER_PAGE * INROLE_MAX_PAGES);
+  const pages = visibleLines.length ? chunkLines(visibleLines, INROLE_MEMBERS_PER_PAGE) : [[]];
+  const truncated = allLines.length > visibleLines.length;
+
+  return pages.map((lines, index) => {
+    const pageText = pages.length > 1 ? ` - Page ${index + 1}/${pages.length}` : '';
+    const shownText = truncated ? ` - showing first ${visibleLines.length}` : '';
+
+    return new EmbedBuilder()
+      .setColor(role.color || 0x38bdf8)
+      .setTitle(`Members in ${role.name}`)
+      .setDescription(lines.length ? lines.join('\n') : 'No members found with this role.')
+      .setFooter({ text: `${matchingMembers.length} member(s) found${shownText}${pageText}` });
+  });
+}
+
 async function warningsEmbed(message: Message, moderator: GuildMember, target: GuildMember): Promise<MessageCreateOptions> {
   ensureModeratorHasPermission(moderator, PermissionFlagsBits.ModerateMembers);
   const now = new Date();
@@ -207,7 +243,7 @@ async function listCommandsEmbed(message: Message): Promise<EmbedBuilder> {
   const groups: Array<[string, string[]]> = [
     ['Moderation', ['warn', 'warns', 'cases', 'mute', 'unmute', 'kick', 'ban', 'unban', 'purge', 's']],
     ['Jail', ['jailsetup', 'jail', 'unjail']],
-    ['Roles', ['roleadd', 'roleremove', 'temproleadd']],
+    ['Roles', ['roleadd', 'roleremove', 'temproleadd', 'inrole']],
     ['Channel Tools', ['slowmode', 'lock', 'unlock']],
     ['Utility / Config', ['afk', 'modlog', 'nickname', 'listcommands']],
   ];
@@ -375,6 +411,11 @@ async function executePrefixCommand(message: Message, commandName: string, args:
         reason,
       );
       return publicActionEmbed({ icon, target: target.user, action: 'received a temporary role', reason, duration, caseId, details: role.name });
+    }
+    case 'inrole': {
+      const { role } = await roleFromArgs(message, args, 0);
+      await sendPrefixResponse(message, { embeds: await inRoleEmbeds(message, role) });
+      return null;
     }
     case 'purge': {
       const amount = Number(args[0]);
