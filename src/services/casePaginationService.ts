@@ -44,6 +44,13 @@ function actionIcon(guild: Guild, action: string): string {
   return serverEmoji(guild, 'warn');
 }
 
+function relationLabel(log: ModerationLog, userId: string): string {
+  if (log.targetUserId === userId && log.moderatorId === userId) return 'self';
+  if (log.targetUserId === userId) return log.moderatorId ? `by <@${log.moderatorId}>` : 'by System';
+  if (log.moderatorId === userId) return log.targetUserId ? `to <@${log.targetUserId}>` : 'no target';
+  return '';
+}
+
 function clampPage(page: number, totalPages: number): number {
   if (totalPages <= 1) return 0;
   return Math.min(Math.max(page, 0), totalPages - 1);
@@ -80,7 +87,10 @@ export async function buildCasesPage(
 
   const where = {
     guildId: target.guild.id,
-    targetUserId: target.id,
+    OR: [
+      { targetUserId: target.id },
+      { moderatorId: target.id },
+    ],
   };
   const totalCases = await prisma.moderationLog.count({ where });
   const totalPages = Math.max(Math.ceil(totalCases / pageSize), 1);
@@ -96,7 +106,9 @@ export async function buildCasesPage(
     ? logs
         .map((log) => {
           const reason = log.reason?.trim() || 'No reason provided';
-          return `[${formatDate(log.createdAt)}] ${actionIcon(target.guild, log.action)} ${formatCaseReference(log)} (${log.targetUserId ?? target.id}): ${reason} - ${durationLabel(log)}`;
+          const relation = relationLabel(log, target.id);
+          const relationSuffix = relation ? ` ${relation}` : '';
+          return `[${formatDate(log.createdAt)}] ${actionIcon(target.guild, log.action)} ${formatCaseReference(log)}${relationSuffix}: ${log.action} - ${reason} - ${durationLabel(log)}`;
         })
         .join('\n')
     : 'No moderation cases found.';
