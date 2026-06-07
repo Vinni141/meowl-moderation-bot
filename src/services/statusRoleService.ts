@@ -31,22 +31,18 @@ function activityTextValues(activity: Presence['activities'][number]): string[] 
   return values;
 }
 
-function statusContainsPhrase(presence: Presence): boolean | null {
+function statusContainsPhrase(presence: Presence): boolean {
   const phrase = normalizeStatusText(config.STATUS_ROLE_PHRASE.trim());
   if (!phrase) return false;
 
-  if (!presence.activities.length) return null;
+  if (!presence.activities.length) return false;
 
-  let hasReadableCustomStatus = false;
   for (const activity of presence.activities) {
     const values = activityTextValues(activity);
-    if (activity.type === ActivityType.Custom && values.length) hasReadableCustomStatus = true;
     if (values.some((value) => normalizeStatusText(value).includes(phrase))) return true;
   }
 
-  return hasReadableCustomStatus || presence.activities.some((activity) => activity.type !== ActivityType.Custom)
-    ? false
-    : null;
+  return false;
 }
 
 function hasConfiguredServerTag(user: User): boolean {
@@ -82,19 +78,15 @@ export async function applyStatusRoleFromPresence(presence: Presence): Promise<v
   if (!member) return;
   const statusMatches = statusContainsPhrase(presence);
 
-  const updates: Array<Promise<void>> = [applyServerTagRoleToMember(member)];
-  if (statusMatches !== null) {
-    updates.push(
-      setConditionalRole(
-        member,
-        config.STATUS_ROLE_ID,
-        statusMatches,
-        `Status contains ${config.STATUS_ROLE_PHRASE}`,
-      ),
-    );
-  }
-
-  await Promise.all(updates);
+  await Promise.all([
+    applyServerTagRoleToMember(member),
+    setConditionalRole(
+      member,
+      config.STATUS_ROLE_ID,
+      statusMatches,
+      `Status contains ${config.STATUS_ROLE_PHRASE}`,
+    ),
+  ]);
 }
 
 export async function applyServerTagRoleToMember(member: GuildMember): Promise<void> {
@@ -117,10 +109,17 @@ export async function applyServerTagRoleFromUser(client: Client<true>, user: Use
 }
 
 export async function syncKnownStatusRoles(client: Client<true>): Promise<void> {
-  const presenceUpdates = [...client.guilds.cache.values()].flatMap((guild) => [...guild.presences.cache.values()].map(applyStatusRoleFromPresence));
   const guild = client.guilds.cache.get(configuredServerTagGuildId());
   const members = guild ? await guild.members.fetch().catch(() => guild.members.cache) : [];
   const tagUpdates = [...members.values()].map(applyServerTagRoleToMember);
+  const statusUpdates = [...members.values()]
+    .filter((member) => member.roles.cache.has(config.STATUS_ROLE_ID.trim()) || guild?.presences.cache.has(member.id))
+    .map((member) => {
+      const presence = guild?.presences.cache.get(member.id);
+      return presence
+        ? applyStatusRoleFromPresence(presence)
+        : setConditionalRole(member, config.STATUS_ROLE_ID, false, `Status no longer contains ${config.STATUS_ROLE_PHRASE}`);
+    });
 
-  await Promise.allSettled([...presenceUpdates, ...tagUpdates]);
+  await Promise.allSettled([...tagUpdates, ...statusUpdates]);
 }
