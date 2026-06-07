@@ -28,7 +28,8 @@ export async function warnUser(
 ): Promise<number> {
   ensureModeratorHasPermission(moderator, PermissionFlagsBits.ModerateMembers);
   const bot = await target.guild.members.fetchMe();
-  ensureTargetManageable(moderator, bot, target, bot.id);
+  if (target.id === bot.id) throw new UserInputError('The bot cannot moderate itself.');
+  if (target.id === moderator.id) throw new UserInputError('You cannot use this action on yourself.');
 
   await prisma.warning.create({
     data: {
