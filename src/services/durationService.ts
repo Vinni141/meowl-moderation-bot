@@ -7,6 +7,27 @@ const units = {
   d: 86_400_000,
 } as const;
 
+const unitAliases = {
+  s: 's',
+  sec: 's',
+  secs: 's',
+  second: 's',
+  seconds: 's',
+  m: 'm',
+  min: 'm',
+  mins: 'm',
+  minute: 'm',
+  minutes: 'm',
+  h: 'h',
+  hr: 'h',
+  hrs: 'h',
+  hour: 'h',
+  hours: 'h',
+  d: 'd',
+  day: 'd',
+  days: 'd',
+} as const;
+
 export const DISCORD_TIMEOUT_MAX_MS = 28 * units.d;
 export const GENERIC_DURATION_MAX_MS = 365 * units.d;
 
@@ -16,16 +37,35 @@ export type ParsedDuration = {
   expiresAt: Date;
 };
 
+type DurationUnitAlias = keyof typeof unitAliases;
+
+function parseDurationParts(input: string): { amount: number; unit: keyof typeof units } | null {
+  const match = /^(\d+)([a-z]+)$/.exec(input.trim().toLowerCase());
+  if (!match) return null;
+
+  const rawUnit = match[2] as DurationUnitAlias;
+  const unit = unitAliases[rawUnit];
+  if (!unit) return null;
+
+  return {
+    amount: Number(match[1]),
+    unit,
+  };
+}
+
+export function isDurationInput(input: string | undefined): boolean {
+  return Boolean(input && parseDurationParts(input));
+}
+
 export function parseDuration(input: string, maxMs = GENERIC_DURATION_MAX_MS, now = new Date()): ParsedDuration {
   const trimmed = input.trim().toLowerCase();
-  const match = /^(\d+)([smhd])$/.exec(trimmed);
+  const duration = parseDurationParts(trimmed);
 
-  if (!match) {
-    throw new UserInputError('Durations must use the format 10s, 5m, 2h, or 7d.');
+  if (!duration) {
+    throw new UserInputError('Durations must use a format like 10s, 10sec, 5m, 1min, 2h, or 7d.');
   }
 
-  const amount = Number(match[1]);
-  const unit = match[2] as keyof typeof units;
+  const { amount, unit } = duration;
 
   if (!Number.isSafeInteger(amount) || amount <= 0) {
     throw new UserInputError('The duration must be greater than 0.');
