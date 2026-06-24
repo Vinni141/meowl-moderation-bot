@@ -28,6 +28,7 @@ import { buildSnipeEmbed } from './snipeService.js';
 import { createRemoveWarningComponents } from './warningRemovalService.js';
 import { serverEmoji } from './emojiService.js';
 import { buildCasesPage } from './casePaginationService.js';
+import { isDurationInput } from './durationService.js';
 
 export const PREFIX = ',';
 
@@ -40,7 +41,7 @@ function stripMention(token: string): string {
 }
 
 function looksLikeDuration(value: string | undefined): boolean {
-  return Boolean(value && /^\d+[smhd]$/i.test(value));
+  return isDurationInput(value);
 }
 
 function looksLikeUserReference(value: string | undefined): boolean {
